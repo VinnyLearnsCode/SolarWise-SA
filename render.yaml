@@ -25,6 +25,8 @@ services:
         value: https://solarwise-sa-vinny-preview.onrender.com
       - key: PUBLIC_SITE_URL
         value: https://solarwise-sa-vinny-preview.onrender.com
+      - key: OPEN_METEO_CACHE_TTL_MS
+        value: "3600000"
 
 databases:
   - name: solarwise-preview-db

@@ -2,7 +2,7 @@ const MAX_CACHE_ENTRIES = 250;
 const cache = new Map();
 const inFlight = new Map();
 
-async function cached(key, ttlMs, loader) {
+async function cached(key, ttlMs, loader, maxStaleMs = Infinity) {
   const item = cache.get(key);
   if (item && item.expires > Date.now()) {
     return { ...item.value, cached: true };
@@ -13,7 +13,7 @@ async function cached(key, ttlMs, loader) {
     return { ...value, cached: true };
   }
 
-  const pending = loadAndCache(key, ttlMs, loader, item);
+  const pending = loadAndCache(key, ttlMs, loader, item, maxStaleMs);
   inFlight.set(key, pending);
   try {
     return await pending;
@@ -22,26 +22,41 @@ async function cached(key, ttlMs, loader) {
   }
 }
 
-async function loadAndCache(key, ttlMs, loader, previous) {
+async function loadAndCache(key, ttlMs, loader, previous, maxStaleMs) {
   try {
     const value = await loader();
-    pruneExpired();
-    if (cache.size >= MAX_CACHE_ENTRIES && !cache.has(key)) {
-      cache.delete(cache.keys().next().value);
-    }
-    cache.set(key, { value, expires: Date.now() + ttlMs });
-    return { ...value, cached: false };
+    store(key, value, ttlMs, maxStaleMs);
+    return { ...value, cached: value.cached === true };
   } catch (error) {
-    if (previous) {
-      return {
+    const dataTimestamp = previous?.value.retrievedAt
+      ? new Date(previous.value.retrievedAt).getTime()
+      : previous?.storedAt;
+    if (previous && Date.now() - dataTimestamp <= maxStaleMs) {
+      const staleValue = {
         ...previous.value,
         cached: true,
         stale: true,
         cacheExpiredAt: new Date(previous.expires).toISOString()
       };
+      store(key, staleValue, ttlMs, maxStaleMs);
+      return staleValue;
     }
     throw error;
   }
+}
+
+function store(key, value, ttlMs, maxStaleMs) {
+  pruneExpired();
+  if (cache.size >= MAX_CACHE_ENTRIES && !cache.has(key)) {
+    cache.delete(cache.keys().next().value);
+  }
+  const now = Date.now();
+  const dataTimestamp = value.retrievedAt ? new Date(value.retrievedAt).getTime() : now;
+  const maxAge = value.stale ? maxStaleMs : ttlMs;
+  const expires = Number.isFinite(dataTimestamp)
+    ? Math.min(now + ttlMs, dataTimestamp + maxAge)
+    : now + ttlMs;
+  cache.set(key, { value, expires, storedAt: now });
 }
 
 function pruneExpired() {

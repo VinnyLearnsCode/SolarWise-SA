@@ -2,6 +2,7 @@ require('dotenv').config();
 const app = require('./app');
 const { checkDatabaseConnection, disconnectDatabase, getPrisma } = require('./src/utils/prisma');
 const { deleteExpiredFeedback } = require('./src/services/feedback-retention');
+const { deleteExpiredWeatherObservations } = require('./src/services/weather-retention');
 
 const port = Number(process.env.PORT || 3000);
 const feedbackCleanupInterval = setInterval(cleanupExpiredFeedback, 24 * 60 * 60 * 1000);
@@ -25,10 +26,15 @@ async function cleanupExpiredFeedback() {
   if (database.status !== 'connected') return;
 
   try {
-    const { count } = await deleteExpiredFeedback(getPrisma());
-    if (count > 0) console.info(`Feedback retention cleanup deleted ${count} expired record(s).`);
+    const prisma = getPrisma();
+    const [feedback, weather] = await Promise.all([
+      deleteExpiredFeedback(prisma),
+      deleteExpiredWeatherObservations(prisma)
+    ]);
+    if (feedback.count > 0) console.info(`Feedback retention cleanup deleted ${feedback.count} expired record(s).`);
+    if (weather.count > 0) console.info(`Weather retention cleanup deleted ${weather.count} expired record(s).`);
   } catch (error) {
-    console.error(`Feedback retention cleanup failed: ${error.message}`);
+    console.error(`Expired data retention cleanup failed: ${error.message}`);
   }
 }
 

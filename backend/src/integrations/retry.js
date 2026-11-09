@@ -34,7 +34,7 @@ async function fetchWithRetry(url, options = {}) {
 }
 
 function isRetryableStatus(status) {
-  return status === 408 || status === 429 || status >= 500;
+  return status === 408 || (status >= 500 && status !== 429);
 }
 
 module.exports = { fetchWithRetry };

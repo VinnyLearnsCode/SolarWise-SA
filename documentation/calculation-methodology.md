@@ -30,6 +30,6 @@ Monthly appliance kWh = watts × quantity × hours/day × days/month ÷ 1,000. B
 
 ## Data sources and freshness
 
-PVGIS is the European Commission Joint Research Centre's modeled solar potential API. Open-Meteo provides weather observations and forecasts; forecast values are not climate normals. Both are fetched on demand with in-memory caching and a timeout. No live Eskom or municipal tariff feed is currently configured. Tariffs must be entered and verified against a municipality or provider's official publication.
+PVGIS is the European Commission Joint Research Centre's modeled solar potential API. Open-Meteo provides weather observations and forecasts; forecast values are not climate normals. Weather responses use bounded timeouts and are cached in memory and, when PostgreSQL is configured, persisted for up to 7 days. Cached snapshots may be used as stale data for up to 6 hours after retrieval. No live Eskom or municipal tariff feed is currently configured. Tariffs must be entered and verified against a municipality or provider's official publication.
 
 The calculator's optional tariff list contains active administrator-maintained records only when the database is available. The displayed energy charge is used as a single flat rate; fixed charges and time-of-use blocks are shown for context but are not included in the solar savings calculation. Check the linked official publication and effective date against the latest bill.

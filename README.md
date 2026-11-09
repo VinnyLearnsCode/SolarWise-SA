@@ -69,9 +69,9 @@ The server does not run schema changes on startup. If PostgreSQL is not configur
 
 ## Weather and solar data
 
-Open-Meteo forecast requests have bounded timeouts and retries. Successful responses are cached in memory; stale results from the same running process may be served after an upstream failure and are marked `stale`. If there is no previous cached response, the API reports an upstream-unavailable error; it never invents weather. The cache is cleared when the server restarts. PVGIS results are modeled long-term potential, not a live meter reading. Both sources include provenance and retrieval timestamps.
+Open-Meteo forecast requests have bounded timeouts and retries. A successful response is cached in memory and, when PostgreSQL is configured, persisted for reuse across service restarts; stored weather snapshots expire after 7 days. The default cache lifetime is one hour. On an upstream outage or rate limit, SolarWise serves an available cached result marked `stale` for up to 6 hours from retrieval; HTTP 429 responses are not retried. If no recent cached result exists, the API reports an unavailable error and never invents weather. PVGIS results are modeled long-term potential, not a live meter reading. Both sources include provenance and retrieval timestamps.
 
-Open-Meteo and PVGIS require outbound DNS/network access. The live Open-Meteo endpoint could not be reached in the development environment due to DNS resolution failure; retry behavior is covered with mocked tests, not represented as a successful live integration test.
+Open-Meteo and PVGIS require outbound DNS/network access. Open-Meteo may return HTTP 429 when request limits are reached; SolarWise avoids retrying those responses and uses recent cached data when available.
 
 No tariff schedule is bundled as current. Users enter their own tariff or use administrator-maintained tariff records with source and effective dates. See [calculation methodology](documentation/calculation-methodology.md) for assumptions.
 

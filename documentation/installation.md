@@ -75,7 +75,7 @@ The remaining environment variables are optional and have defaults in the applic
 | `OPEN_METEO_TIMEOUT_MS` | `8000` | Per-attempt request timeout (bounded to 1–30 seconds) |
 | `OPEN_METEO_RETRIES` | `2` | Retries after network failures and retryable HTTP statuses (bounded to 0–5) |
 | `OPEN_METEO_RETRY_DELAY_MS` | `300` | Base delay between exponential retries |
-| `OPEN_METEO_CACHE_TTL_MS` | `900000` | Successful weather cache lifetime (bounded to 1 minute–24 hours) |
+| `OPEN_METEO_CACHE_TTL_MS` | `3600000` | Weather cache lifetime (bounded to 1 minute–24 hours) |
 | `PVGIS_BASE_URL` | `https://re.jrc.ec.europa.eu/api/v5_3` | PVGIS endpoint |
 | `PVGIS_TIMEOUT_MS` | `12000` | PVGIS request timeout (bounded to 1–30 seconds) |
 | `ADMIN_EMAIL` | unset | Required only when seeding an administrator |
@@ -125,7 +125,7 @@ Then test the application route:
 curl.exe --max-time 40 "http://localhost:3000/api/weather?latitude=-26.2041&longitude=28.0473"
 ```
 
-If DNS fails, check the machine's network connection, DNS resolver, proxy/firewall policy, and outbound HTTPS restrictions. Do not copy fabricated observations into the database or use them as a fallback. The API returns a truthful unavailable response until it can fetch data or use a previously retrieved in-memory cache entry. Cached data is volatile and is lost on restart.
+If DNS fails, check the machine's network connection, DNS resolver, proxy/firewall policy, and outbound HTTPS restrictions. Open-Meteo may also return HTTP 429 when request limits are reached; SolarWise does not retry those responses. Successful weather snapshots are cached in memory and, when PostgreSQL is configured, persisted for up to 7 days. Cached forecasts may be served as stale for at most 6 hours from retrieval when the provider is unavailable.
 
 ## Troubleshooting
 
