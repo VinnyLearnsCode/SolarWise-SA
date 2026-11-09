@@ -1,4 +1,16 @@
-document.getElementById('solar-form')?.addEventListener('submit', async (event) => {
+const solarForm = document.getElementById('solar-form');
+if (solarForm) {
+  const query = new URLSearchParams(window.location.search);
+  ['monthlyBill', 'monthlyConsumption', 'tariff', 'systemKw', 'batteryKwh'].forEach((name) => {
+    const value = query.get(name);
+    const field = solarForm.elements.namedItem(name);
+    if (value !== null && field && Number.isFinite(Number(value)) && Number(value) >= Number(field.min || 0) && Number(value) <= Number(field.max || Infinity)) field.value = value;
+  });
+  const mode = query.get('mode');
+  if (mode && [...solarForm.elements.mode.options].some((option) => option.value === mode)) solarForm.elements.mode.value = mode;
+  if (query.get('guided') === '1') document.querySelector('.page-intro p').textContent = 'Your guided planner inputs are ready. Review the figures, add your actual quote or cost estimate, then calculate.';
+}
+solarForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const errorNode = document.getElementById('solar-error');

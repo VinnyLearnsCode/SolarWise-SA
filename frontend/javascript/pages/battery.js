@@ -1,18 +1,36 @@
 const batteryItems = [];
 const batteryList = document.getElementById('battery-list');
 function drawBatteryItems() {
-  batteryList.innerHTML = batteryItems.map((item, index) => `<li>${SolarFormat.escape(item.name)} · ${item.watts} W · ${item.quantity} unit(s) · ${item.hours} h <button type="button" data-remove="${index}" aria-label="Remove ${SolarFormat.escape(item.name)}">Remove</button></li>`).join('');
+  batteryList.innerHTML = batteryItems.length ? batteryItems.map((item, index) => `<li>${SolarFormat.escape(item.name)} · ${item.watts} W · ${item.quantity} unit(s) · ${item.hours} h <button type="button" data-remove="${index}" aria-label="Remove ${SolarFormat.escape(item.name)}">Remove</button></li>`).join('') : '<li class="list-empty">No loads added yet. Add a preset or enter a custom load above.</li>';
   batteryList.querySelectorAll('[data-remove]').forEach((button) => button.addEventListener('click', () => {
     batteryItems.splice(Number(button.dataset.remove), 1);
     drawBatteryItems();
   }));
 }
+const batteryPresets = {
+  lights: { name: 'LED lights', watts: 10, quantity: 4 },
+  router: { name: 'Wi-Fi router', watts: 15, quantity: 1 },
+  fridge: { name: 'Fridge (running)', watts: 150, quantity: 1 },
+  television: { name: 'LED TV', watts: 100, quantity: 1 },
+  laptop: { name: 'Laptop', watts: 60, quantity: 1 },
+  phone: { name: 'Phone charging', watts: 15, quantity: 1 }
+};
+document.getElementById('battery-preset')?.addEventListener('change', (event) => {
+  const preset = batteryPresets[event.currentTarget.value];
+  if (!preset) return;
+  const hours = Number(document.getElementById('backup-duration').value) || 5;
+  batteryItems.push({ ...preset, hours });
+  document.getElementById('battery-hours').value = hours;
+  document.getElementById('battery-error').textContent = '';
+  drawBatteryItems();
+  event.currentTarget.value = '';
+});
 document.getElementById('battery-add').addEventListener('click', () => {
   const name = document.getElementById('battery-name').value.trim();
   const watts = Number(document.getElementById('battery-watts').value);
   const quantity = Number(document.getElementById('battery-count').value);
   const hours = Number(document.getElementById('battery-hours').value);
-  if (!name || watts <= 0 || quantity <= 0 || hours <= 0) {
+  if (!name || !Number.isFinite(watts) || !Number.isFinite(quantity) || !Number.isFinite(hours) || watts <= 0 || quantity <= 0 || hours <= 0 || hours > 168) {
     document.getElementById('battery-error').textContent = 'Enter a name, power, quantity and runtime greater than zero.';
     return;
   }
