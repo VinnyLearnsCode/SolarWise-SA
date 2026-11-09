@@ -29,6 +29,11 @@ locationButton?.addEventListener('click', async () => {
     return;
   }
   let html = `<div class="eyebrow">${SolarFormat.escape(place)} · data snapshot</div><h2>Solar &amp; weather context</h2>`;
+  if (weatherResponse.status === 'fulfilled') {
+    html += renderWeather(weatherResponse.value, place);
+  } else {
+    html += `<p class="form-error">Weather unavailable: ${SolarFormat.escape(weatherResponse.reason.message)}</p>`;
+  }
   if (solarResponse.status === 'fulfilled') {
     const solar = solarResponse.value;
     const annual = solar.data?.outputs?.totals?.fixed?.E_y;
@@ -41,20 +46,61 @@ locationButton?.addEventListener('click', async () => {
   } else {
     html += `<p class="form-error">Solar potential unavailable: ${SolarFormat.escape(solarResponse.reason.message)}</p>`;
   }
-  if (weatherResponse.status === 'fulfilled') {
-    const weather = weatherResponse.value;
-    const current = weather.data.current || {};
-    const daily = weather.data.daily || {};
-    const indices = (daily.time || []).map((_, index) => index).slice(-7);
-    html += `<div class="weather-card"><h3>Weather conditions · ${SolarFormat.escape(weather.data.timezone || place)}</h3><p>Current forecast/observation: ${current.temperature_2m ?? '—'}°C · cloud cover ${current.cloud_cover ?? '—'}% · precipitation ${current.precipitation ?? '—'} mm.</p><div class="weather-days">${indices.map((index) => `<div><b>${new Date(`${daily.time[index]}T12:00:00`).toLocaleDateString('en-ZA', { weekday: 'short' })}</b><span>${daily.temperature_2m_max?.[index] ?? '—'}° / ${daily.temperature_2m_min?.[index] ?? '—'}°</span><span>${daily.cloud_cover_mean?.[index] ?? '—'}% cloud</span></div>`).join('')}</div></div>
-      <p class="assumptions">${SolarFormat.escape(weather.source)} · ${SolarFormat.escape(weather.dataType || 'weather forecast')} · retrieved ${new Date(weather.retrievedAt).toLocaleString('en-ZA')}${weather.stale ? ' · stale cached data' : weather.cached ? ' · cached' : ''}. Forecasts are not historical climate averages.</p>`;
-  } else {
-    html += `<p class="form-error">Weather unavailable: ${SolarFormat.escape(weatherResponse.reason.message)}</p>`;
-  }
   output.innerHTML = html;
   if (solarResponse.status === 'fulfilled') drawSolarChart(solarResponse.value.data.outputs?.monthly?.fixed || []);
 });
 if (requestedLocationFound) locationButton.click();
+
+function renderWeather(weather, place) {
+  const current = weather.data.current || {};
+  const daily = weather.data.daily || {};
+  const indices = (daily.time || []).map((_, index) => index);
+  if (weather.source === 'Open-Meteo') indices.splice(0, Math.max(0, indices.length - 7));
+  else indices.splice(7);
+  const currentCondition = describeWeather(current.cloud_cover, current.precipitation);
+  const currentTemperature = formatWeatherNumber(current.temperature_2m, 0);
+  const forecast = indices.map((index) => {
+    const condition = describeWeather(daily.cloud_cover_mean?.[index], daily.precipitation_sum?.[index]);
+    const day = new Date(`${daily.time[index]}T12:00:00`).toLocaleDateString('en-ZA', { weekday: 'short' });
+    const high = formatWeatherNumber(daily.temperature_2m_max?.[index], 0);
+    const low = formatWeatherNumber(daily.temperature_2m_min?.[index], 0);
+    return `<div class="weather-day"><b>${SolarFormat.escape(day)}</b><span class="weather-icon" role="img" aria-label="${condition.label}">${weatherIcon(condition.icon)}</span><strong>${high}°</strong><span class="weather-low">${low}°</span></div>`;
+  }).join('');
+  const freshness = weather.stale ? ' · stale cached data' : weather.cached ? ' · cached' : '';
+  return `<section class="weather-card" aria-label="Weather forecast for ${SolarFormat.escape(place)}">
+      <div class="weather-visual">
+        <div class="weather-current-icon" role="img" aria-label="${currentCondition.label}">${weatherIcon(currentCondition.icon)}</div>
+        <div class="weather-current-copy"><span>Current conditions · ${SolarFormat.escape(weather.data.timezone || place)}</span><strong>${currentTemperature}°</strong><p>${currentCondition.label}</p></div>
+      </div>
+      <div class="weather-forecast" aria-label="Forecast temperature range for the coming days">${forecast || '<p>Daily forecast is not available.</p>'}</div>
+      <div class="weather-stats" aria-label="Current weather details"><div><span>Temperature</span><strong>${currentTemperature}°C</strong></div><div><span>Cloud cover</span><strong>${formatWeatherNumber(current.cloud_cover, 0)}%</strong></div><div><span>Precipitation</span><strong>${formatWeatherNumber(current.precipitation, 1)} mm</strong></div><div><span>Humidity</span><strong>${formatWeatherNumber(current.relative_humidity_2m, 0)}%</strong></div><div><span>Wind</span><strong>${formatWeatherNumber(current.wind_speed_10m, 0)} km/h</strong></div></div>
+      <p class="assumptions">${SolarFormat.escape(weather.source)} · ${SolarFormat.escape(weather.dataType || 'weather forecast')} · retrieved ${new Date(weather.retrievedAt).toLocaleString('en-ZA')}${freshness}. Forecasts are not historical climate averages.</p>
+    </section>`;
+}
+
+function describeWeather(cloudCover, precipitation) {
+  if (Number.isFinite(precipitation) && precipitation >= 0.2) return { icon: 'rain', label: 'Rain likely' };
+  if (Number.isFinite(cloudCover) && cloudCover >= 75) return { icon: 'cloud', label: 'Overcast' };
+  if (Number.isFinite(cloudCover) && cloudCover >= 35) return { icon: 'partly-cloudy', label: 'Partly cloudy' };
+  return { icon: 'sun', label: 'Mostly clear' };
+}
+
+function weatherIcon(condition) {
+  if (condition === 'rain') {
+    return '<svg viewBox="0 0 80 80" aria-hidden="true"><circle class="weather-sun" cx="52" cy="27" r="13"/><path class="weather-cloud" d="M20 51h39a12 12 0 0 0 0-24 19 19 0 0 0-36-2 13 13 0 0 0-3 26Z"/><path class="weather-rain" d="m28 59-4 9m18-9-4 9m18-9-4 9"/></svg>';
+  }
+  if (condition === 'cloud') {
+    return '<svg viewBox="0 0 80 80" aria-hidden="true"><path class="weather-cloud" d="M18 58h43a13 13 0 0 0 0-26 20 20 0 0 0-38-3 15 15 0 0 0-5 29Z"/></svg>';
+  }
+  if (condition === 'partly-cloudy') {
+    return '<svg viewBox="0 0 80 80" aria-hidden="true"><circle class="weather-sun" cx="52" cy="28" r="15"/><path class="weather-cloud" d="M17 59h42a13 13 0 0 0 0-26 20 20 0 0 0-38-3 15 15 0 0 0-4 29Z"/></svg>';
+  }
+  return '<svg viewBox="0 0 80 80" aria-hidden="true"><circle class="weather-sun" cx="40" cy="40" r="17"/><path class="weather-sun-rays" d="M40 8v9m0 46v9M8 40h9m46 0h9M17 17l7 7m32 32 7 7m0-46-7 7M24 56l-7 7"/></svg>';
+}
+
+function formatWeatherNumber(value, digits) {
+  return Number.isFinite(value) ? SolarFormat.number(value, digits) : '—';
+}
 
 function drawSolarChart(monthly) {
   if (!monthly.length || !window.Chart) return;
