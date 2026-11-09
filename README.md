@@ -2,6 +2,8 @@
 
 SolarWise SA is a no-login solar decision-support application for South African households. Calculations are estimates, not quotes, guarantees, financial advice or live tariff data.
 
+The calculator includes a bill-entry guide, browser-only saved assessments with JSON export/import, and links to a local installer-quote worksheet at `/html/quotes.html`. Quote details and imported/exported assessments stay in browser storage unless the user explicitly exports or shares a file; never enter account numbers or other sensitive identifiers.
+
 ## Requirements
 
 - Node.js 20 or newer and npm

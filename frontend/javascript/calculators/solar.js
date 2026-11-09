@@ -6,6 +6,9 @@ let availableTariffs = [];
 let shouldLoadLocation = false;
 
 if (solarForm) {
+  ['monthlyBill', 'monthlyConsumption', 'tariff'].forEach((name) => {
+    solarForm.elements[name].step = 'any';
+  });
   const query = new URLSearchParams(window.location.search);
   ['monthlyBill', 'monthlyConsumption', 'tariff', 'systemKw', 'batteryKwh', 'irradiation', 'installationCost'].forEach((name) => {
     const value = query.get(name);
@@ -120,9 +123,15 @@ document.getElementById('tariff-record')?.addEventListener('change', (event) => 
     return;
   }
   solarForm.elements.tariff.value = Number(tariff.energyChargePerKwh);
+  const verifiedAt = new Date(tariff.lastVerifiedAt);
+  const effectiveFrom = new Date(tariff.effectiveFrom);
+  const daysSinceVerified = Math.floor((Date.now() - verifiedAt.getTime()) / 86400000);
+  const freshness = daysSinceVerified > 365
+    ? ` This record was last verified ${daysSinceVerified} days ago; confirm it with your provider before relying on it.`
+    : ` Last verified ${new Intl.DateTimeFormat('en-ZA').format(verifiedAt)} (${daysSinceVerified < 0 ? 'date is in the future; verify' : `${daysSinceVerified} days ago`}).`;
   status.replaceChildren();
   status.append(document.createTextNode(
-    `${tariff.municipality.province.name} · ${tariff.municipality.name} · ${tariff.name} (${tariff.customerCategory}); effective ${new Date(tariff.effectiveFrom).toLocaleDateString('en-ZA')}; fixed charge ${SolarFormat.money(Number(tariff.fixedMonthlyCharge))}/month. Verify with your provider. Source: `
+    `${tariff.municipality.province.name} · ${tariff.municipality.name} · ${tariff.name} (${tariff.customerCategory}); effective ${effectiveFrom.toLocaleDateString('en-ZA')}; fixed charge ${SolarFormat.money(Number(tariff.fixedMonthlyCharge))}/month. Verify with your provider.${freshness} Source: `
   ));
   const link = document.createElement('a');
   link.href = tariff.sourceUrl;
@@ -130,6 +139,34 @@ document.getElementById('tariff-record')?.addEventListener('change', (event) => 
   link.rel = 'noopener noreferrer';
   link.textContent = 'official tariff publication';
   status.append(link, document.createTextNode(` · last verified ${new Date(tariff.lastVerifiedAt).toLocaleDateString('en-ZA')}`));
+});
+
+document.getElementById('apply-bill-helper')?.addEventListener('click', () => {
+  const total = Number(document.getElementById('bill-helper-total').value);
+  const days = Number(document.getElementById('bill-helper-days').value);
+  const usage = Number(document.getElementById('bill-helper-usage').value);
+  const energyCharges = Number(document.getElementById('bill-helper-energy').value);
+  const status = document.getElementById('bill-helper-status');
+  if (![total, days, usage, energyCharges].every(Number.isFinite) || total < 0 || days < 1 || days > 90 || usage <= 0 || energyCharges <= 0) {
+    status.textContent = 'Enter a total bill, a billing period of 1–90 days, positive kWh, and energy charges excluding fixed charges.';
+    return;
+  }
+  if (energyCharges > total) {
+    status.textContent = 'Energy charges cannot exceed the total bill. Check which lines on your bill are energy charges.';
+    return;
+  }
+  const tariff = energyCharges / usage;
+  const monthlyBill = total * 30 / days;
+  const monthlyUsage = usage * 30 / days;
+  if (monthlyBill > 100000000 || monthlyUsage < 1 || monthlyUsage > 1000000 || tariff > 10000) {
+    status.textContent = 'These figures are outside the calculator’s supported monthly bill, usage or tariff range. Check the bill period and units.';
+    return;
+  }
+  solarForm.elements.monthlyBill.value = monthlyBill.toFixed(2);
+  solarForm.elements.monthlyConsumption.value = monthlyUsage.toFixed(2);
+  solarForm.elements.tariff.value = tariff.toFixed(4);
+  document.getElementById('tariff-record').value = '';
+  status.textContent = `Calculator inputs updated: monthly bill and usage are normalized to 30 days; energy tariff is R${tariff.toFixed(2)}/kWh (energy charges ÷ kWh). Fixed charges are not used to calculate the tariff. Review the values before calculating.`;
 });
 
 document.getElementById('saved-scenarios')?.addEventListener('click', (event) => {
@@ -170,6 +207,89 @@ document.getElementById('saved-scenarios')?.addEventListener('click', (event) =>
   }
 });
 
+document.getElementById('export-scenarios')?.addEventListener('click', () => {
+  try {
+    const blob = new Blob([JSON.stringify({ format: 'solarwise-scenarios', version: 1, exportedAt: new Date().toISOString(), scenarios: readSavedScenarios() }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'solarwise-saved-assessments.json';
+    link.click();
+    URL.revokeObjectURL(url);
+    savedStatus.textContent = 'Saved assessments exported to a JSON file on this device.';
+  } catch (error) {
+    savedStatus.textContent = `Could not export saved assessments: ${error.message}`;
+  }
+});
+
+document.getElementById('import-scenarios')?.addEventListener('change', async (event) => {
+  const file = event.currentTarget.files[0];
+  if (!file) return;
+  event.currentTarget.value = '';
+  if (file.size > 1000000) {
+    savedStatus.textContent = 'Import file is too large. Choose a SolarWise export smaller than 1 MB.';
+    return;
+  }
+  try {
+    const imported = JSON.parse(await file.text());
+    if (imported.format !== 'solarwise-scenarios' || imported.version !== 1 || !Array.isArray(imported.scenarios)) {
+      throw new Error('This is not a supported SolarWise saved-assessments file.');
+    }
+    if (imported.scenarios.length > 10 || imported.scenarios.some((scenario) => !isValidImportedScenario(scenario))) {
+      throw new Error('The file contains too many scenarios or an invalid assessment.');
+    }
+    const existing = readSavedScenarios();
+    const seenIds = new Set(existing.map((scenario) => scenario.id).filter(Boolean));
+    const additions = imported.scenarios.filter((scenario) => {
+      if (!scenario.id) return true;
+      if (seenIds.has(scenario.id)) return false;
+      seenIds.add(scenario.id);
+      return true;
+    });
+    const merged = [...existing, ...additions].slice(0, 10);
+    const importedCount = merged.length - existing.length;
+    localStorage.setItem('solarwise-scenarios', JSON.stringify(merged));
+    renderSavedScenarios();
+    savedStatus.textContent = `Imported ${importedCount} new assessment(s). Existing assessments were retained; at most 10 are stored.`;
+  } catch (error) {
+    savedStatus.textContent = `Could not import assessments: ${error.message}`;
+  }
+});
+
+function isValidImportedScenario(scenario) {
+  if (!scenario || typeof scenario !== 'object' || typeof scenario.name !== 'string'
+    || !scenario.input || typeof scenario.input !== 'object'
+    || !scenario.result || typeof scenario.result !== 'object'
+    || !scenario.result.financial || !scenario.result.generation || !scenario.result.impact
+    || typeof scenario.result.verdict !== 'string' || typeof scenario.result.explanation !== 'string') return false;
+  const input = scenario.input;
+  const financial = scenario.result.financial;
+  const requiredInputs = ['monthlyBill', 'monthlyConsumption', 'tariff', 'systemKw', 'installationCost', 'annualTariffIncrease', 'irradiation', 'lifespanYears'];
+  const numericResults = [
+    financial.estimatedInstallationCost, financial.monthlySavings, financial.annualSavings,
+    financial.remainingMonthlyBill, financial.billReductionPercent, financial.annualMaintenance,
+    financial.returnOnInvestmentPercent, scenario.result.inputs?.systemKw,
+    scenario.result.generation.monthlyKwh, scenario.result.impact.gridDependencyPercent
+  ];
+  const optionalResults = [financial.paybackYears, financial.savings10Years, financial.savings15Years, financial.savings20Years];
+  return requiredInputs.every((key) => Number.isFinite(Number(input[key])))
+    && (input.batteryKwh === undefined || Number.isFinite(Number(input.batteryKwh)))
+    && Number(input.monthlyBill) >= 0 && Number(input.monthlyBill) <= 100000000
+    && Number(input.monthlyConsumption) > 0 && Number(input.monthlyConsumption) <= 1000000
+    && Number(input.tariff) > 0 && Number(input.tariff) <= 10000
+    && Number(input.systemKw) > 0 && Number(input.systemKw) <= 1000
+    && (input.batteryKwh === undefined || (Number(input.batteryKwh) >= 0 && Number(input.batteryKwh) <= 10000))
+    && Number(input.installationCost) > 0 && Number(input.installationCost) <= 100000000
+    && Number(input.annualTariffIncrease) >= 0 && Number(input.annualTariffIncrease) <= 0.5
+    && Number(input.irradiation) > 0 && Number(input.irradiation) <= 10
+    && Number.isInteger(Number(input.lifespanYears)) && Number(input.lifespanYears) >= 1 && Number(input.lifespanYears) <= 50
+    && ['partial', 'backup', 'hybrid', 'off-grid'].includes(input.mode)
+    && numericResults.every((value) => Number.isFinite(Number(value)))
+    && optionalResults.every((value) => value === null || Number.isFinite(Number(value)))
+    && typeof scenario.result.verdict === 'string'
+    && typeof scenario.result.explanation === 'string';
+}
+
 document.getElementById('saved-scenarios')?.addEventListener('submit', (event) => {
   if (!event.target.matches('[data-scenario-form]')) return;
   event.preventDefault();
@@ -195,7 +315,11 @@ async function loadTariffs() {
     for (const tariff of availableTariffs) {
       const option = document.createElement('option');
       option.value = tariff.id;
-      option.textContent = `${tariff.municipality.province.name} · ${tariff.municipality.name} · ${tariff.name} · R${Number(tariff.energyChargePerKwh).toFixed(2)}/kWh`;
+      const effectiveFrom = new Date(tariff.effectiveFrom);
+      const notYetEffective = effectiveFrom.getTime() > Date.now();
+      const daysSinceVerified = Math.floor((Date.now() - new Date(tariff.lastVerifiedAt).getTime()) / 86400000);
+      option.textContent = `${tariff.municipality.province.name} · ${tariff.municipality.name} · ${tariff.name} · R${Number(tariff.energyChargePerKwh).toFixed(2)}/kWh${notYetEffective ? ` · starts ${effectiveFrom.toLocaleDateString('en-ZA')}` : ''}${daysSinceVerified > 365 ? ` · verify (last checked ${daysSinceVerified} days ago)` : ''}`;
+      option.disabled = notYetEffective;
       select.append(option);
     }
     status.textContent = availableTariffs.length
