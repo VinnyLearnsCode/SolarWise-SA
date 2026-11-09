@@ -393,6 +393,7 @@ function renderSavedScenarios() {
 
 function renderResult(result, container, payload) {
   const { financial, generation, impact } = result;
+  const generatedAt = new Date();
   const emissionsSummary = impact.estimatedAnnualEmissionsAvoidedKg === null
     ? 'Carbon impact is not calculated because no verified South African grid emissions factor is configured.'
     : `Annual emissions avoided: approximately ${SolarFormat.number(impact.estimatedAnnualEmissionsAvoidedKg)} kg CO₂e.`;
@@ -416,11 +417,15 @@ function renderResult(result, container, payload) {
       <div class="result-metric"><small>Grid dependency (estimate)</small><strong>${SolarFormat.number(impact.gridDependencyPercent)}%</strong></div>
     </div>
     <p class="assumptions">${SolarFormat.escape(result.explanation)} ${SolarFormat.escape(emissionsSummary)} Remaining bills may include fixed charges.${SolarFormat.escape(locationSummary)}</p>
-    <div class="result-actions"><button type="button" data-action="print">Print / save PDF</button><button type="button" data-action="download">Download JSON report</button><button type="button" data-action="stress">Run scenario stress test</button><a class="button secondary" id="compare-link" href="compare.html">Compare configurations</a></div>
+    ${renderPrintablePlan(result, payload, locationContext, generatedAt)}
+    <div class="result-actions"><button type="button" data-action="print">Download solar plan (PDF)</button><button type="button" data-action="download">Download data (JSON)</button><button type="button" data-action="stress">Run scenario stress test</button><a class="button secondary" id="compare-link" href="compare.html">Compare configurations</a></div>
+    <p class="plan-print-help" role="status">Opens your print dialog. Choose “Save as PDF” to download or save this plan.</p>
     <p class="stress-status" id="stress-status" role="status">Stress test changes modeled solar resource and installed cost by ±10%; it is not a confidence interval or prediction.</p>
     <div id="stress-results" class="stress-results"></div>`;
   updateCompareLink(payload);
-  container.querySelector('[data-action=print]').addEventListener('click', () => window.print());
+  container.querySelector('[data-action=print]').addEventListener('click', () => {
+    window.print();
+  });
   container.querySelector('[data-action=download]').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify({ result, generatedAt: new Date().toISOString(), locationContext }, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
@@ -431,6 +436,59 @@ function renderResult(result, container, payload) {
   });
   container.querySelector('[data-action=stress]').addEventListener('click', (event) => runStressTest(payload, event.currentTarget));
   renderSavedScenarios();
+}
+
+function renderPrintablePlan(result, payload, solarLocation, generatedAt) {
+  const { financial, generation, impact } = result;
+  const modeLabels = {
+    partial: 'Partial solar',
+    backup: 'Battery backup',
+    hybrid: 'Hybrid solar',
+    'off-grid': 'Off-grid estimate'
+  };
+  const location = solarLocation
+    ? `<p><strong>Solar resource:</strong> PVGIS modeled data for ${SolarFormat.escape(solarLocation.place)} (${SolarFormat.number(solarLocation.annualKwh)} kWh/year at ${SolarFormat.number(solarLocation.peakPowerKw, 1)} kWp; retrieved ${new Date(solarLocation.retrievedAt).toLocaleDateString('en-ZA')}${solarLocation.stale ? ', stale cached data' : ''}).</p>`
+    : '<p><strong>Solar resource:</strong> User-entered estimate; no location-specific PVGIS model was attached.</p>';
+  const horizons = [
+    ['10-year net savings', financial.savings10Years],
+    ['15-year net savings', financial.savings15Years],
+    ['20-year net savings', financial.savings20Years]
+  ].filter(([, value]) => value !== null);
+  return `<article class="solar-plan-print">
+      <header class="solar-plan-header"><a class="brand" href="/html/index.html"><span class="brand-mark">S</span>SolarWise <span>SA</span></a><p>Household solar planning summary</p></header>
+      <p class="solar-plan-date">Prepared ${generatedAt.toLocaleDateString('en-ZA')} · Illustrative estimate</p>
+      <h1>Your solar plan</h1>
+      <p class="solar-plan-verdict">${SolarFormat.escape(result.verdict)}</p>
+      <section><h2>System and estimated results</h2><dl class="solar-plan-grid">
+        <div><dt>Solar configuration</dt><dd>${modeLabels[payload.mode] || SolarFormat.escape(payload.mode)}</dd></div>
+        <div><dt>Solar capacity</dt><dd>${SolarFormat.number(result.inputs.systemKw, 1)} kWp</dd></div>
+        <div><dt>Battery storage</dt><dd>${SolarFormat.number(result.inputs.batteryKwh, 1)} kWh</dd></div>
+        <div><dt>Estimated installed cost</dt><dd>${SolarFormat.money(financial.estimatedInstallationCost)}</dd></div>
+        <div><dt>Modeled generation</dt><dd>${SolarFormat.number(generation.monthlyKwh)} kWh/month · ${SolarFormat.number(generation.annualKwh)} kWh/year</dd></div>
+        <div><dt>Estimated bill reduction</dt><dd>${SolarFormat.number(financial.billReductionPercent)}%</dd></div>
+        <div><dt>Estimated monthly savings</dt><dd>${SolarFormat.money(financial.monthlySavings)}</dd></div>
+        <div><dt>Estimated remaining monthly bill</dt><dd>${SolarFormat.money(financial.remainingMonthlyBill)}</dd></div>
+        <div><dt>Simple payback</dt><dd>${financial.paybackYears === null ? 'Not reached under these assumptions' : `${SolarFormat.number(financial.paybackYears, 1)} years`}</dd></div>
+        ${horizons.map(([label, value]) => `<div><dt>${label}</dt><dd>${SolarFormat.money(value)}</dd></div>`).join('')}
+        <div><dt>Estimated grid dependency</dt><dd>${SolarFormat.number(impact.gridDependencyPercent)}%</dd></div>
+      </dl></section>
+      <section><h2>Inputs and assumptions</h2><dl class="solar-plan-grid">
+        <div><dt>Monthly electricity bill</dt><dd>${SolarFormat.money(payload.monthlyBill)}</dd></div>
+        <div><dt>Monthly electricity use</dt><dd>${SolarFormat.number(payload.monthlyConsumption)} kWh</dd></div>
+        <div><dt>Energy tariff</dt><dd>R${SolarFormat.number(payload.tariff, 2)}/kWh</dd></div>
+        <div><dt>Solar resource input</dt><dd>${SolarFormat.number(payload.irradiation, 2)} kWh/m²/day</dd></div>
+        <div><dt>Estimated annual tariff increase</dt><dd>${SolarFormat.number(payload.annualTariffIncrease * 100, 1)}%</dd></div>
+        <div><dt>System lifespan</dt><dd>${SolarFormat.number(payload.lifespanYears)} years</dd></div>
+      </dl>${location}<p>${SolarFormat.escape(result.explanation)}</p></section>
+      <section><h2>Questions to ask your installer</h2><ul>
+        <li>What roof orientation, shading, structure and usable area did you assess?</li>
+        <li>What equipment models, warranties, installation and maintenance costs are included?</li>
+        <li>How will the design perform with my actual usage times and tariff schedule?</li>
+        <li>For backup, which essential loads will run, for how long, and during what conditions?</li>
+        <li>What municipal registration, grid-connection or export requirements apply?</li>
+      </ul></section>
+      <footer><strong>Planning estimate only — not a quote, engineering design, or guarantee.</strong><p>Actual generation and savings depend on site conditions, equipment, usage timing, tariffs, fixed charges and applicable rules. Export revenue is not included. Verify inputs and assumptions with current bills and a qualified installer. Generated by SolarWise SA.</p></footer>
+    </article>`;
 }
 
 async function runStressTest(payload, button) {
