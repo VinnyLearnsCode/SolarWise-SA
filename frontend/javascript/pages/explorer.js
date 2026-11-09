@@ -67,10 +67,24 @@ async function retrySolarModel(button, latitude, longitude, peakPower) {
 
 function renderSolar(solar, peakPower) {
   const annual = solar.data?.outputs?.totals?.fixed?.E_y;
-  const monthly = solar.data?.outputs?.monthly?.fixed || [];
-  return `<div class="result-grid"><div class="result-metric"><small>PVGIS modeled annual output · ${peakPower} kWp</small><strong>${annual == null ? 'Not returned' : `${SolarFormat.number(annual)} kWh/year`}</strong></div><div class="result-metric"><small>Average modeled daily output</small><strong>${annual == null ? 'Not returned' : `${SolarFormat.number(annual / 365, 1)} kWh/day`}</strong></div></div>
-    <p class="assumptions">${SolarFormat.escape(solar.source)} · ${SolarFormat.escape(solar.dataType)} · retrieved ${new Date(solar.retrievedAt).toLocaleString('en-ZA')}${solar.stale ? ' · stale cached data' : solar.cached ? ' · cached' : ''}. Model uses PVGIS defaults (30° tilt, south-facing, 14% system loss). Reported output may depend on API output availability.</p>
-    ${monthly.length ? '<div class="chart-wrap"><canvas id="solar-chart" role="img" aria-label="Modeled solar energy by month"></canvas></div>' : ''}`;
+  const hasAnnualEstimate = Number.isFinite(annual);
+  const monthly = (solar.data?.outputs?.monthly?.fixed || [])
+    .filter((month) => Number.isFinite(month.E_m));
+  const annualEstimate = hasAnnualEstimate ? SolarFormat.number(annual) : 'Unavailable';
+  const averageMonthlyEstimate = hasAnnualEstimate ? `${SolarFormat.number(annual / 12)} kWh` : 'Unavailable';
+  const averageDailyEstimate = hasAnnualEstimate ? `${SolarFormat.number(annual / 365, 1)} kWh` : 'Unavailable';
+  const freshness = solar.stale ? ' · older cached result' : solar.cached ? ' · cached' : '';
+  return `<section class="solar-potential" aria-labelledby="solar-potential-title">
+      <div class="solar-potential-heading"><span class="eyebrow">Solar estimate</span><h3 id="solar-potential-title">What could this system produce?</h3><p>For the selected location and system size, the model estimates how much solar energy the panels could generate.</p></div>
+      <div class="solar-potential-summary">
+        <div class="solar-potential-annual"><span>Estimated energy in a typical year</span><strong>${annualEstimate}</strong><b>kWh per year</b><p>With a ${SolarFormat.escape(peakPower)} kWp solar system</p></div>
+        <div class="solar-potential-average"><span>Average month</span><strong>${averageMonthlyEstimate}</strong><small>Yearly estimate divided by 12</small></div>
+        <div class="solar-potential-average"><span>Average day</span><strong>${averageDailyEstimate}</strong><small>Yearly estimate divided by 365</small></div>
+      </div>
+      <p class="solar-potential-note"><strong>How to read this:</strong> kWh is energy produced. kWp is the system's rated peak capacity. Actual generation changes with seasons, weather, roof direction, shade, and installation.</p>
+      ${monthly.length ? `<div class="solar-potential-chart"><h4>How generation changes through the year</h4><p>Each bar shows modeled energy for that month. Summer and winter output can differ.</p><div class="chart-wrap"><canvas id="solar-chart" role="img" aria-label="Estimated solar energy in kilowatt-hours for each month"></canvas></div></div>` : ''}
+      <details class="solar-potential-details"><summary>About this estimate</summary><p>Modeled by ${SolarFormat.escape(solar.source)} (${SolarFormat.escape(solar.dataType)}), retrieved ${new Date(solar.retrievedAt).toLocaleString('en-ZA')}${freshness}. The model assumes a fixed, south-facing system tilted at 30° with 14% system losses. This is a production estimate, not a savings estimate or a guarantee. Savings depend on when you use electricity, your tariff, and any export credits.</p></details>
+    </section>`;
 }
 
 function renderWeather(weather, place) {
@@ -229,6 +243,17 @@ function drawSolarChart(monthly) {
   new Chart(canvas, {
     type: 'bar',
     data: { labels, datasets: [{ label: 'Modeled monthly solar energy (kWh)', data: values, backgroundColor: '#42a8ed', borderRadius: 7 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: 'kWh' } } } }
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (context) => `${SolarFormat.number(context.parsed.y)} kWh estimated` } }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Month' } },
+        y: { beginAtZero: true, title: { display: true, text: 'Energy estimated (kWh)' } }
+      }
+    }
   });
 }
