@@ -1,4 +1,9 @@
+const path = require('node:path');
+
 function notFound(_req, res) {
+  if (!_req.path.startsWith('/api/') && _req.accepts('html')) {
+    return res.status(404).sendFile(path.join(__dirname, '..', '..', '..', 'frontend', 'html', '404.html'));
+  }
   res.status(404).json({ error: { code: 'NOT_FOUND', message: 'The requested resource was not found.' } });
 }
 

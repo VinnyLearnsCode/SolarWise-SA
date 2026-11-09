@@ -19,6 +19,8 @@ services:
         generateValue: true
       - key: FRONTEND_ORIGIN
         value: https://solarwise-sa-vinny-preview.onrender.com
+      - key: PUBLIC_SITE_URL
+        value: https://solarwise-sa-vinny-preview.onrender.com
 
 databases:
   - name: solarwise-preview-db

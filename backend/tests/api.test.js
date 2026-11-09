@@ -21,11 +21,54 @@ test('health endpoint responds without a database connection', async (context) =
   const homepage = await fetch(`${base}/html/index.html`);
   assert.equal(homepage.status, 200);
   const contentSecurityPolicy = homepage.headers.get('content-security-policy');
-  assert.match(contentSecurityPolicy, /script-src[^;]*https:\/\/www\.googletagmanager\.com/);
-  assert.match(contentSecurityPolicy, /connect-src[^;]*https:\/\/www\.google-analytics\.com/);
+  assert.doesNotMatch(contentSecurityPolicy, /googletagmanager|google-analytics/);
+  assert.equal(homepage.headers.get('referrer-policy'), 'strict-origin');
   const privacyNotice = await fetch(`${base}/html/privacy.html`);
   assert.equal(privacyNotice.status, 200);
-  assert.match(await privacyNotice.text(), /GTM-PQRTDNDG/);
+  const privacyHtml = await privacyNotice.text();
+  assert.match(privacyHtml, /Thabiso Monaheng/);
+  assert.match(privacyHtml, /mailto:abutvincent23@gmail\.com/);
+  assert.match(privacyHtml, /Google Tag Manager and other optional analytics are currently disabled/);
+  assert.match(privacyHtml, /Feedback messages and any email address included with them are kept for 365 days/);
+  assert.match(privacyHtml, /acknowledge requests within 5 business days/);
+  assert.match(privacyHtml, /substantive response within 30 calendar days/);
+  const robots = await fetch(`${base}/robots.txt`);
+  assert.equal(robots.status, 200);
+  assert.match(await robots.text(), /Disallow: \/html\/dashboard\.html/);
+  const sitemap = await fetch(`${base}/sitemap.xml`);
+  assert.equal(sitemap.status, 200);
+  const sitemapXml = await sitemap.text();
+  assert.match(sitemapXml, /\/html\/calculator\.html/);
+  assert.match(sitemapXml, /\/html\/quotes\.html/);
+  assert.doesNotMatch(sitemapXml, /dashboard\.html/);
+  const publicPages = [
+    'index.html', 'about.html', 'affordability.html', 'battery.html',
+    'calculator.html', 'compare.html', 'contact.html', 'education.html',
+    'energy-usage.html', 'faq.html', 'financing.html', 'off-grid.html',
+    'planner.html', 'privacy.html', 'quotes.html', 'solar-explorer.html'
+  ];
+  for (const page of publicPages) {
+    const response = await fetch(`${base}/html/${page}`);
+    assert.equal(response.status, 200, `${page} should be served`);
+    const html = await response.text();
+    assert.match(html, /<title>[^<]+<\/title>/, `${page} should have a title`);
+    assert.match(html, /<meta name="description" content="[^"]+">/, `${page} should have a description`);
+    assert.match(html, /<link rel="canonical" href="https:\/\/solarwise-sa-vinny-preview\.onrender\.com\/html\/[^"]+">/, `${page} should have a canonical URL`);
+    assert.match(html, /<meta property="og:description" content="[^"]+">/, `${page} should have social description metadata`);
+    assert.doesNotMatch(html, /<script[^>]+src="https:\/\/www\.googletagmanager\.com/, `${page} must not load GTM directly`);
+    assert.doesNotMatch(html, /privacy-controls|privacy-settings-panel|data-gtm-container|GTM-PQRTDNDG/, `${page} must not expose disabled analytics UI or tags`);
+    assert.match(html, /<main\b/, `${page} should have a main landmark`);
+  }
+  const dashboard = await fetch(`${base}/html/dashboard.html`);
+  const dashboardHtml = await dashboard.text();
+  assert.match(dashboardHtml, /<meta name="robots" content="noindex, nofollow">/);
+  assert.doesNotMatch(dashboardHtml, /rel="canonical"/);
+  const missingPage = await fetch(`${base}/this-page-does-not-exist`, { headers: { accept: 'text/html' } });
+  assert.equal(missingPage.status, 404);
+  assert.match(await missingPage.text(), /That page isn't/);
+  const missingApi = await fetch(`${base}/api/this-route-does-not-exist`);
+  assert.equal(missingApi.status, 404);
+  assert.equal((await missingApi.json()).error.code, 'NOT_FOUND');
 
   const readiness = await fetch(`${base}/api/health/ready`);
   assert.equal(readiness.status, 503);
