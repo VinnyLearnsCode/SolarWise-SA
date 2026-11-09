@@ -1,1 +1,2 @@
 .calculator-layout .form-panel{position:sticky;top:95px}.calculator-layout .results-panel{min-height:420px}.calculator-layout .field-grid label{margin-bottom:7px}
+@media (max-width:680px){.calculator-layout .form-panel{position:static;top:auto}}
