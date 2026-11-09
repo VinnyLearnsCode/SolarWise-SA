@@ -58,6 +58,9 @@ test('health endpoint responds without a database connection', async (context) =
     assert.doesNotMatch(html, /<script[^>]+src="https:\/\/www\.googletagmanager\.com/, `${page} must not load GTM directly`);
     assert.doesNotMatch(html, /privacy-controls|privacy-settings-panel|data-gtm-container|GTM-PQRTDNDG/, `${page} must not expose disabled analytics UI or tags`);
     assert.match(html, /<main\b/, `${page} should have a main landmark`);
+    if (page === 'planner.html') {
+      assert.match(html, /id="monthly-bill" type="number" min="1" step="any"/, 'monthly bill should accept arbitrary positive amounts');
+    }
   }
   const dashboard = await fetch(`${base}/html/dashboard.html`);
   const dashboardHtml = await dashboard.text();
