@@ -1,16 +1,15 @@
 const { spawnSync } = require('node:child_process');
 const { PrismaClient } = require('@prisma/client');
 
-const hasEmail = Boolean(process.env.ADMIN_EMAIL);
 const hasPassword = Boolean(process.env.ADMIN_PASSWORD);
 
-if (!hasEmail && !hasPassword) {
-  console.log('Administrator bootstrap skipped; ADMIN_EMAIL and ADMIN_PASSWORD are not configured.');
+if (!hasPassword) {
+  console.log('Administrator bootstrap skipped; set ADMIN_PASSWORD to create the initial administrator.');
   process.exit(0);
 }
 
-if (!hasEmail || !hasPassword) {
-  console.error('Administrator bootstrap requires both ADMIN_EMAIL and ADMIN_PASSWORD.');
+if (!process.env.ADMIN_EMAIL) {
+  console.error('Administrator bootstrap requires ADMIN_EMAIL when ADMIN_PASSWORD is configured.');
   process.exit(1);
 }
 
