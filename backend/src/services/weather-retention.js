@@ -7,7 +7,10 @@ function deleteExpiredWeatherObservations(prisma, now = new Date()) {
 
   const cutoff = new Date(now.getTime() - WEATHER_RETENTION_DAYS * 24 * 60 * 60 * 1000);
   return prisma.weatherObservation.deleteMany({
-    where: { sourceName: 'Open-Meteo', observedAt: { lt: cutoff } }
+    where: {
+      sourceName: { in: ['Open-Meteo', 'MET Norway Locationforecast'] },
+      observedAt: { lt: cutoff }
+    }
   });
 }
 

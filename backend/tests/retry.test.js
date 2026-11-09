@@ -54,3 +54,27 @@ test('fetchWithRetry does not retry rate-limited responses', async () => {
     else process.env.OPEN_METEO_RETRY_DELAY_MS = previous.delay;
   }
 });
+
+test('fetchWithRetry preserves provider identification headers', async () => {
+  const originalFetch = global.fetch;
+  const previousRetries = process.env.MET_NORWAY_RETRIES;
+  let requestHeaders;
+  process.env.MET_NORWAY_RETRIES = '0';
+  global.fetch = async (_url, options) => {
+    requestHeaders = options.headers;
+    return new Response('{}', { status: 200 });
+  };
+
+  try {
+    await fetchWithRetry('https://weather.invalid', {
+      retriesEnv: 'MET_NORWAY_RETRIES',
+      headers: { 'User-Agent': 'SolarWiseSA/1.0' }
+    });
+    assert.equal(requestHeaders['User-Agent'], 'SolarWiseSA/1.0');
+    assert.equal(requestHeaders.Accept, 'application/json');
+  } finally {
+    global.fetch = originalFetch;
+    if (previousRetries === undefined) delete process.env.MET_NORWAY_RETRIES;
+    else process.env.MET_NORWAY_RETRIES = previousRetries;
+  }
+});

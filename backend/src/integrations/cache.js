@@ -52,10 +52,11 @@ function store(key, value, ttlMs, maxStaleMs) {
   }
   const now = Date.now();
   const dataTimestamp = value.retrievedAt ? new Date(value.retrievedAt).getTime() : now;
-  const maxAge = value.stale ? maxStaleMs : ttlMs;
+  const entryTtlMs = typeof ttlMs === 'function' ? ttlMs(value) : ttlMs;
+  const maxAge = value.stale ? maxStaleMs : entryTtlMs;
   const expires = Number.isFinite(dataTimestamp)
-    ? Math.min(now + ttlMs, dataTimestamp + maxAge)
-    : now + ttlMs;
+    ? Math.min(now + entryTtlMs, dataTimestamp + maxAge)
+    : now + entryTtlMs;
   cache.set(key, { value, expires, storedAt: now });
 }
 

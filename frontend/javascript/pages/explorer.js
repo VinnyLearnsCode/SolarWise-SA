@@ -47,7 +47,7 @@ locationButton?.addEventListener('click', async () => {
     const daily = weather.data.daily || {};
     const indices = (daily.time || []).map((_, index) => index).slice(-7);
     html += `<div class="weather-card"><h3>Weather conditions · ${SolarFormat.escape(weather.data.timezone || place)}</h3><p>Current forecast/observation: ${current.temperature_2m ?? '—'}°C · cloud cover ${current.cloud_cover ?? '—'}% · precipitation ${current.precipitation ?? '—'} mm.</p><div class="weather-days">${indices.map((index) => `<div><b>${new Date(`${daily.time[index]}T12:00:00`).toLocaleDateString('en-ZA', { weekday: 'short' })}</b><span>${daily.temperature_2m_max?.[index] ?? '—'}° / ${daily.temperature_2m_min?.[index] ?? '—'}°</span><span>${daily.cloud_cover_mean?.[index] ?? '—'}% cloud</span></div>`).join('')}</div></div>
-      <p class="assumptions">${SolarFormat.escape(weather.source)} · weather forecast and recent observations · retrieved ${new Date(weather.retrievedAt).toLocaleString('en-ZA')}${weather.stale ? ' · stale cached data' : weather.cached ? ' · cached' : ''}. Forecasts are not historical climate averages.</p>`;
+      <p class="assumptions">${SolarFormat.escape(weather.source)} · ${SolarFormat.escape(weather.dataType || 'weather forecast')} · retrieved ${new Date(weather.retrievedAt).toLocaleString('en-ZA')}${weather.stale ? ' · stale cached data' : weather.cached ? ' · cached' : ''}. Forecasts are not historical climate averages.</p>`;
   } else {
     html += `<p class="form-error">Weather unavailable: ${SolarFormat.escape(weatherResponse.reason.message)}</p>`;
   }

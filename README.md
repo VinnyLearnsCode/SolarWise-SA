@@ -69,9 +69,9 @@ The server does not run schema changes on startup. If PostgreSQL is not configur
 
 ## Weather and solar data
 
-Open-Meteo forecast requests have bounded timeouts and retries. A successful response is cached in memory and, when PostgreSQL is configured, persisted for reuse across service restarts; stored weather snapshots expire after 7 days. The default cache lifetime is one hour. On an upstream outage or rate limit, SolarWise serves an available cached result marked `stale` for up to 6 hours from retrieval; HTTP 429 responses are not retried. If no recent cached result exists, the API reports an unavailable error and never invents weather. PVGIS results are modeled long-term potential, not a live meter reading. Both sources include provenance and retrieval timestamps.
+Open-Meteo forecast requests have bounded timeouts and retries. If Open-Meteo is unavailable or rate-limits requests, SolarWise falls back to MET Norway's global Locationforecast API, normalizing its forecast into the same response shape and identifying the provider in the response. Open-Meteo results are cached for one hour; MET Norway requests are cached for at least three hours in accordance with its usage guidance. When PostgreSQL is configured, results are persisted across service restarts and expire after 7 days. HTTP 429 responses are not retried. If both providers fail, a recent cached result may be served as stale for up to 6 hours from retrieval; the API never invents weather. PVGIS results are modeled long-term potential, not a live meter reading. All responses include provenance and retrieval timestamps.
 
-Open-Meteo and PVGIS require outbound DNS/network access. Open-Meteo may return HTTP 429 when request limits are reached; SolarWise avoids retrying those responses and uses recent cached data when available.
+Open-Meteo, MET Norway, and PVGIS require outbound DNS/network access. Open-Meteo may return HTTP 429 when request limits are reached; SolarWise avoids retrying those responses and uses MET Norway or recent cached data when available.
 
 No tariff schedule is bundled as current. Users enter their own tariff or use administrator-maintained tariff records with source and effective dates. See [calculation methodology](documentation/calculation-methodology.md) for assumptions.
 

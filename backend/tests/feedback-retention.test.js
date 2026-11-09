@@ -50,7 +50,7 @@ test('feedback cleanup rejects an invalid reference date', async () => {
     assert.equal(WEATHER_RETENTION_DAYS, 7);
     assert.deepEqual(query, {
       where: {
-        sourceName: 'Open-Meteo',
+        sourceName: { in: ['Open-Meteo', 'MET Norway Locationforecast'] },
         observedAt: { lt: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) }
       }
     });

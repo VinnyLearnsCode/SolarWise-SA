@@ -125,7 +125,7 @@ Then test the application route:
 curl.exe --max-time 40 "http://localhost:3000/api/weather?latitude=-26.2041&longitude=28.0473"
 ```
 
-If DNS fails, check the machine's network connection, DNS resolver, proxy/firewall policy, and outbound HTTPS restrictions. Open-Meteo may also return HTTP 429 when request limits are reached; SolarWise does not retry those responses. Successful weather snapshots are cached in memory and, when PostgreSQL is configured, persisted for up to 7 days. Cached forecasts may be served as stale for at most 6 hours from retrieval when the provider is unavailable.
+If DNS fails, check the machine's network connection, DNS resolver, proxy/firewall policy, and outbound HTTPS restrictions. Open-Meteo may also return HTTP 429 when request limits are reached; SolarWise does not retry those responses and instead attempts the MET Norway Locationforecast API. The fallback identifies itself with a SolarWise User-Agent and the same location request is cached for at least 3 hours, consistent with MET Norway's usage guidance. Successful weather snapshots are cached in memory and, when PostgreSQL is configured, persisted for up to 7 days. If both providers are unavailable, cached forecasts may be served as stale for at most 6 hours from retrieval.
 
 ## Troubleshooting
 

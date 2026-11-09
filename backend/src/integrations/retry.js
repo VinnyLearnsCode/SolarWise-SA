@@ -13,7 +13,7 @@ async function fetchWithRetry(url, options = {}) {
     try {
       const response = await fetch(url, {
         signal: AbortSignal.timeout(timeoutMs),
-        headers: { Accept: 'application/json' }
+        headers: { Accept: 'application/json', ...options.headers }
       });
       if (!isRetryableStatus(response.status) || attempt === attempts - 1) return response;
       lastError = new Error(`Upstream returned HTTP ${response.status}.`);
