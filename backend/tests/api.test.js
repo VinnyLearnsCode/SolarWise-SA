@@ -18,6 +18,15 @@ test('health endpoint responds without a database connection', async (context) =
   assert.equal(health.status, 200);
   assert.equal((await health.json()).status, 'ok');
 
+  const homepage = await fetch(`${base}/html/index.html`);
+  assert.equal(homepage.status, 200);
+  const contentSecurityPolicy = homepage.headers.get('content-security-policy');
+  assert.match(contentSecurityPolicy, /script-src[^;]*https:\/\/www\.googletagmanager\.com/);
+  assert.match(contentSecurityPolicy, /connect-src[^;]*https:\/\/www\.google-analytics\.com/);
+  const privacyNotice = await fetch(`${base}/html/privacy.html`);
+  assert.equal(privacyNotice.status, 200);
+  assert.match(await privacyNotice.text(), /GTM-PQRTDNDG/);
+
   const readiness = await fetch(`${base}/api/health/ready`);
   assert.equal(readiness.status, 503);
   assert.equal((await readiness.json()).database.status, 'not_configured');
