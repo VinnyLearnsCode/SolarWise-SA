@@ -1,3 +1,31 @@
+const compareQuery = new URLSearchParams(window.location.search);
+const compareFields = {
+  monthlyBill: 'compare-bill',
+  monthlyConsumption: 'compare-use',
+  tariff: 'compare-tariff',
+  irradiation: 'compare-irradiation',
+  systemKw: 'compare-kw'
+};
+for (const [parameter, id] of Object.entries(compareFields)) {
+  const value = compareQuery.get(parameter);
+  const field = document.getElementById(id);
+  if (value !== null && Number.isFinite(Number(value)) && Number(value) >= Number(field.min || 0) && Number(value) <= Number(field.max || Infinity)) {
+    field.value = value;
+  }
+}
+const sharedCost = Number(compareQuery.get('installationCost'));
+if (Number.isFinite(sharedCost) && sharedCost > 0) {
+  const targetCost = compareQuery.get('mode') === 'partial' ? 'cost-grid' : 'cost-hybrid';
+  document.getElementById(targetCost).value = sharedCost;
+}
+const sharedPlace = compareQuery.get('place');
+if (sharedPlace) {
+  const note = document.createElement('p');
+  note.className = 'compare-location-note';
+  note.textContent = `Planner inputs loaded for ${sharedPlace}. Review the location-based solar resource and system costs before comparing.`;
+  document.querySelector('.compare-form').append(note);
+}
+
 document.getElementById('compare-run')?.addEventListener('click', async () => {
   const button = document.getElementById('compare-run');
   const output = document.getElementById('compare-results');

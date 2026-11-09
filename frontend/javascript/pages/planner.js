@@ -39,6 +39,8 @@ function updatePlan() {
       ? 'Roof area is self-reported here; orientation, structure and shading still need an on-site check.'
       : 'Roof space and shading are not assessed. Ask for a roof and shade survey before choosing a system.';
   const params = new URLSearchParams({ guided: '1', monthlyBill: String(bill), monthlyConsumption: String(usage), tariff: String(tariff), systemKw: midKw.toFixed(1), batteryKwh: String(batteryTarget), mode });
+  const place = document.getElementById('planner-location').value;
+  if (place) params.set('place', place);
   document.getElementById('calculator-link').href = `calculator.html?${params}`;
   document.getElementById('backup-link').href = 'battery.html';
 }
@@ -57,5 +59,5 @@ document.getElementById('planner-form').addEventListener('submit', (event) => { 
 backButton.addEventListener('click', () => showStep(Math.max(activeStep - 1, 0)));
 document.getElementById('tariff').addEventListener('input', (event) => { event.currentTarget.dataset.touched = 'true'; });
 document.getElementById('battery-target').addEventListener('input', updatePlan);
-document.querySelectorAll('input[name="goal"], #roof').forEach((field) => field.addEventListener('change', updatePlan));
+document.querySelectorAll('input[name="goal"], #roof, #planner-location').forEach((field) => field.addEventListener('change', updatePlan));
 showStep(0);

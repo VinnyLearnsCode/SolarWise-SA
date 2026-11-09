@@ -14,6 +14,8 @@ Estimated self-used solar is the lesser of annual consumption and generation mul
 
 Annual maintenance defaults to 1% of installation cost. Gross savings grow using the user-set tariff escalation and are reduced by 0.5% annual panel degradation. Net savings subtract annual maintenance. Long-term savings are nominal, undiscounted values; no NPV/IRR claim is made. Simple payback divides initial cost by first-year savings net of maintenance and is not a discounted cash-flow payback.
 
+The calculator can load modeled annual PVGIS output for a representative South African city. It converts that output to the calculator's equivalent daily-irradiation input using the selected capacity and calculator performance ratio; it does not treat the PVGIS result as a measured value or a guarantee. Location, source, retrieval time, and cache status are shown with the assessment. The optional stress test reruns the estimate with solar resource and installed cost changed by 10% in either direction. These are illustrative scenarios, not confidence intervals or forecasts.
+
 The application does not currently calculate carbon savings because no dated, verified South African grid emissions factor is configured. Do not use an assumed generic factor for formal reporting; publish a sourced factor with its effective date before enabling this estimate.
 
 ## Affordability and loan
@@ -29,3 +31,5 @@ Monthly appliance kWh = watts × quantity × hours/day × days/month ÷ 1,000. B
 ## Data sources and freshness
 
 PVGIS is the European Commission Joint Research Centre's modeled solar potential API. Open-Meteo provides weather observations and forecasts; forecast values are not climate normals. Both are fetched on demand with in-memory caching and a timeout. No live Eskom or municipal tariff feed is currently configured. Tariffs must be entered and verified against a municipality or provider's official publication.
+
+The calculator's optional tariff list contains active administrator-maintained records only when the database is available. The displayed energy charge is used as a single flat rate; fixed charges and time-of-use blocks are shown for context but are not included in the solar savings calculation. Check the linked official publication and effective date against the latest bill.
