@@ -78,6 +78,8 @@ The remaining environment variables are optional and have defaults in the applic
 | `OPEN_METEO_CACHE_TTL_MS` | `3600000` | Weather cache lifetime (bounded to 1 minute–24 hours) |
 | `PVGIS_BASE_URL` | `https://re.jrc.ec.europa.eu/api/v5_3` | PVGIS endpoint |
 | `PVGIS_TIMEOUT_MS` | `12000` | PVGIS request timeout (bounded to 1–30 seconds) |
+| `PVGIS_RETRIES` | `1` | Retries after network failures and temporary HTTP errors (bounded to 0–5; HTTP 429 is not retried) |
+| `PVGIS_RETRY_DELAY_MS` | `300` | Base delay between exponential retries |
 | `ADMIN_EMAIL` | unset | Required only when seeding an administrator |
 | `ADMIN_PASSWORD` | unset | Required only when seeding; minimum 12 characters |
 
@@ -134,6 +136,6 @@ If DNS fails, check the machine's network connection, DNS resolver, proxy/firewa
 - **Authentication failed / Prisma P1000:** verify the role and password; percent-encode reserved characters in the connection URL.
 - **Database missing / Prisma P1003:** create the database and retry `npm run db:check`.
 - **Migration failure:** check `npm run db:status` and the migration error. Resolve schema drift deliberately; do not delete migration history or reset a database containing data.
-- **Weather unavailable:** try the independent DNS and `curl.exe` checks above. Core calculators do not depend on Open-Meteo or PVGIS.
+- **Weather or PVGIS unavailable:** try the independent DNS and `curl.exe` checks above. PVGIS transient network and server errors are retried once by default; the Solar Explorer also lets you retry solar data without reloading the weather forecast. Core calculators do not depend on Open-Meteo or PVGIS.
 
 For production, provision PostgreSQL with backups and least-privilege access, use a unique secret manager-backed `JWT_SECRET`, set `NODE_ENV=production` and the exact `FRONTEND_ORIGIN`, terminate HTTPS at a trusted proxy, and apply migrations during deployment.

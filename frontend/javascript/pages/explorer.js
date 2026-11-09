@@ -35,21 +35,43 @@ locationButton?.addEventListener('click', async () => {
     html += `<p class="form-error">Weather unavailable: ${SolarFormat.escape(weatherResponse.reason.message)}</p>`;
   }
   if (solarResponse.status === 'fulfilled') {
-    const solar = solarResponse.value;
-    const annual = solar.data?.outputs?.totals?.fixed?.E_y;
-    const monthly = solar.data?.outputs?.monthly?.fixed || [];
-    html += `<div class="result-grid"><div class="result-metric"><small>PVGIS modeled annual output · ${peakPower} kWp</small><strong>${annual == null ? 'Not returned' : `${SolarFormat.number(annual)} kWh/year`}</strong></div><div class="result-metric"><small>Average modeled daily output</small><strong>${annual == null ? 'Not returned' : `${SolarFormat.number(annual / 365, 1)} kWh/day`}</strong></div></div>
-      <p class="assumptions">${SolarFormat.escape(solar.source)} · ${SolarFormat.escape(solar.dataType)} · retrieved ${new Date(solar.retrievedAt).toLocaleString('en-ZA')}${solar.stale ? ' · stale cached data' : solar.cached ? ' · cached' : ''}. Model uses PVGIS defaults (30° tilt, south-facing, 14% system loss). Reported output may depend on API output availability.</p>`;
-    if (monthly.length) {
-      html += `<div class="chart-wrap"><canvas id="solar-chart" role="img" aria-label="Modeled solar energy by month"></canvas></div>`;
-    }
+    html += `<div id="solar-model-result">${renderSolar(solarResponse.value, peakPower)}</div>`;
   } else {
-    html += `<p class="form-error">Solar potential unavailable: ${SolarFormat.escape(solarResponse.reason.message)}</p>`;
+    html += `<div id="solar-model-result" class="solar-model-error" role="status"><p class="form-error">Solar potential unavailable: ${SolarFormat.escape(solarResponse.reason.message)}</p><button class="button secondary" id="retry-solar" type="button">Retry solar model</button></div>`;
   }
   output.innerHTML = html;
   if (solarResponse.status === 'fulfilled') drawSolarChart(solarResponse.value.data.outputs?.monthly?.fixed || []);
+  else {
+    document.getElementById('retry-solar')?.addEventListener('click', async (event) => {
+      await retrySolarModel(event.currentTarget, latitude, longitude, peakPower);
+    });
+  }
 });
 if (requestedLocationFound) locationButton.click();
+
+async function retrySolarModel(button, latitude, longitude, peakPower) {
+  const solarResult = document.getElementById('solar-model-result');
+  button.disabled = true;
+  button.textContent = 'Retrying solar model…';
+  try {
+    const solar = await SolarAPI.request(`/solar-potential?latitude=${latitude}&longitude=${longitude}&peakPower=${peakPower}`);
+    solarResult.innerHTML = renderSolar(solar, peakPower);
+    drawSolarChart(solar.data.outputs?.monthly?.fixed || []);
+  } catch (error) {
+    solarResult.innerHTML = `<p class="form-error">Solar potential unavailable: ${SolarFormat.escape(error.message)}</p><button class="button secondary" id="retry-solar" type="button">Retry solar model</button>`;
+    solarResult.querySelector('#retry-solar').addEventListener('click', (event) => {
+      retrySolarModel(event.currentTarget, latitude, longitude, peakPower);
+    });
+  }
+}
+
+function renderSolar(solar, peakPower) {
+  const annual = solar.data?.outputs?.totals?.fixed?.E_y;
+  const monthly = solar.data?.outputs?.monthly?.fixed || [];
+  return `<div class="result-grid"><div class="result-metric"><small>PVGIS modeled annual output · ${peakPower} kWp</small><strong>${annual == null ? 'Not returned' : `${SolarFormat.number(annual)} kWh/year`}</strong></div><div class="result-metric"><small>Average modeled daily output</small><strong>${annual == null ? 'Not returned' : `${SolarFormat.number(annual / 365, 1)} kWh/day`}</strong></div></div>
+    <p class="assumptions">${SolarFormat.escape(solar.source)} · ${SolarFormat.escape(solar.dataType)} · retrieved ${new Date(solar.retrievedAt).toLocaleString('en-ZA')}${solar.stale ? ' · stale cached data' : solar.cached ? ' · cached' : ''}. Model uses PVGIS defaults (30° tilt, south-facing, 14% system loss). Reported output may depend on API output availability.</p>
+    ${monthly.length ? '<div class="chart-wrap"><canvas id="solar-chart" role="img" aria-label="Modeled solar energy by month"></canvas></div>' : ''}`;
+}
 
 function renderWeather(weather, place) {
   const current = weather.data.current || {};

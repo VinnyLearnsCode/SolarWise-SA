@@ -1,4 +1,5 @@
 const { cached } = require('./cache');
+const { fetchWithRetry } = require('./retry');
 
 async function getSolarPotential(latitude, longitude, peakPower = 1) {
   const key = `pvgis:${latitude.toFixed(3)}:${longitude.toFixed(3)}:${peakPower}`;
@@ -11,7 +12,13 @@ async function getSolarPotential(latitude, longitude, peakPower = 1) {
     }).toString();
     let response;
     try {
-      response = await fetch(url, { signal: AbortSignal.timeout(timeoutSetting()) });
+      response = await fetchWithRetry(url, {
+        retries: 1,
+        timeoutMs: timeoutSetting(),
+        retriesEnv: 'PVGIS_RETRIES',
+        timeoutEnv: 'PVGIS_TIMEOUT_MS',
+        delayEnv: 'PVGIS_RETRY_DELAY_MS'
+      });
     } catch (error) {
       console.warn(`PVGIS request failed: ${error.message}`);
       const unavailable = new Error('PVGIS could not be reached. Please retry later.');
