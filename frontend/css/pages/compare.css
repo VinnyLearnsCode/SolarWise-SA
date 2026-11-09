@@ -1,0 +1,2 @@
+.compare-form{margin-bottom:20px}.compare-results{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.compare-card{padding:22px;border:1px solid var(--line);background:var(--surface);border-radius:18px;box-shadow:var(--shadow)}.compare-card h2{font-size:19px;margin:0}.compare-card p{color:var(--muted);font-size:12px}.compare-card .result-metric{margin:9px 0}.compare-card .result-hero{margin-top:15px}
+@media (max-width:680px){.compare-results{grid-template-columns:1fr}}

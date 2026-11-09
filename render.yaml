@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: solarwise-sa-vinny-preview
+    runtime: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm ci && npm run db:generate
+    # Free previews apply checked-in migrations before startup; paid deployments should use preDeployCommand.
+    startCommand: npm run db:deploy && npm start
+    healthCheckPath: /api/health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: solarwise-preview-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_ORIGIN
+        value: https://solarwise-sa-vinny-preview.onrender.com
+
+databases:
+  - name: solarwise-preview-db
+    region: frankfurt
+    plan: free
+    databaseName: solarwise
+    user: solarwise

@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Administrator {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         String   @default("ADMIN")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Province {
+  id           String         @id @default(cuid())
+  name         String         @unique
+  code         String         @unique
+  municipalities Municipality[]
+}
+
+model Municipality {
+  id           String             @id @default(cuid())
+  name         String
+  provinceId   String
+  province     Province           @relation(fields: [provinceId], references: [id])
+  tariffs      ElectricityTariff[]
+  @@unique([name, provinceId])
+}
+
+model ElectricityTariff {
+  id                 String       @id @default(cuid())
+  municipalityId     String
+  municipality       Municipality @relation(fields: [municipalityId], references: [id])
+  name               String
+  customerCategory   String
+  effectiveFrom      DateTime
+  effectiveTo        DateTime?
+  fixedMonthlyCharge Decimal      @db.Decimal(12, 2)
+  energyChargePerKwh Decimal      @db.Decimal(12, 4)
+  timeOfUseRates     Json?
+  feedInRatePerKwh   Decimal?     @db.Decimal(12, 4)
+  sourceUrl          String
+  lastVerifiedAt     DateTime
+  createdAt          DateTime     @default(now())
+  @@index([municipalityId, effectiveFrom])
+}
+
+model SolarDataset {
+  id                 String   @id @default(cuid())
+  sourceName         String
+  datasetType        String
+  retrievedAt        DateTime
+  effectiveDate      DateTime?
+  geographicCoverage String
+  reliability        String
+  dataClassification String
+  payload            Json
+}
+
+model WeatherObservation {
+  id          String   @id @default(cuid())
+  latitude    Decimal  @db.Decimal(8, 5)
+  longitude   Decimal  @db.Decimal(8, 5)
+  observedAt  DateTime
+  sourceName  String
+  payload     Json
+  @@index([latitude, longitude, observedAt])
+}
+
+model InstallationCostAssumption {
+  id          String   @id @default(cuid())
+  systemType  String
+  capacityKw  Decimal  @db.Decimal(8, 2)
+  costZar     Decimal  @db.Decimal(14, 2)
+  source      String
+  effectiveAt DateTime
+  updatedAt   DateTime @updatedAt
+}
+
+model SystemConfiguration {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  systemType  String
+  capacityKw  Decimal  @db.Decimal(8, 2)
+  batteryKwh  Decimal  @db.Decimal(8, 2)
+  assumptions Json
+  updatedAt   DateTime @updatedAt
+}
+
+model ApplianceProfile {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  watts       Int
+  source      String?
+}
+
+model EmissionsFactor {
+  id          String   @id @default(cuid())
+  name        String
+  kgPerKwh    Decimal  @db.Decimal(8, 5)
+  sourceUrl   String
+  effectiveAt DateTime
+}
+
+model EducationalContent {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  body        String
+  sourceLinks Json?
+  published   Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+}
+
+model FAQ {
+  id          String   @id @default(cuid())
+  question    String
+  answer      String
+  sourceLinks Json?
+  published   Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+}
+
+model ApiLog {
+  id          String   @id @default(cuid())
+  integration String
+  statusCode  Int?
+  error       String?
+  createdAt   DateTime @default(now())
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  message   String
+  email     String?
+  createdAt DateTime @default(now())
+}
