@@ -4,7 +4,7 @@ const { z } = require('zod');
 const { getPrisma } = require('../utils/prisma');
 
 async function login(req, res) {
-  const input = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(200) }).parse(req.body);
+  const input = z.object({ email: z.string().trim().email().max(254), password: z.string().min(1).max(200) }).parse(req.body);
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
     return res.status(503).json({ error: { code: 'AUTH_NOT_CONFIGURED', message: 'Administrator authentication is not configured securely.' } });
   }
@@ -12,8 +12,45 @@ async function login(req, res) {
   if (!admin || !(await bcrypt.compare(input.password, admin.passwordHash))) {
     return res.status(401).json({ error: { code: 'INVALID_CREDENTIALS', message: 'Email or password is incorrect.' } });
   }
-  const token = jwt.sign({ sub: admin.id, role: admin.role }, process.env.JWT_SECRET, { expiresIn: '8h', issuer: 'solarwise-sa' });
-  res.json({ token, expiresIn: 28800 });
+  const token = jwt.sign({
+    sub: admin.id,
+    role: admin.role,
+    authVersion: admin.authVersion
+  }, process.env.JWT_SECRET, { expiresIn: '8h', issuer: 'solarwise-sa' });
+  res.json({ token, email: admin.email, expiresIn: 28800 });
+}
+
+async function updateCredentials(req, res) {
+  const input = z.object({
+    currentPassword: z.string().min(1).max(200),
+    newEmail: z.string().trim().email().max(254).optional(),
+    newPassword: z.string().min(12).max(200).optional()
+  }).refine((value) => value.newEmail || value.newPassword, {
+    message: 'Enter a new email address, a new password, or both.'
+  }).parse(req.body);
+
+  const db = getPrisma();
+  const administrator = await db.administrator.findUnique({ where: { id: req.admin.sub } });
+  if (!administrator || !(await bcrypt.compare(input.currentPassword, administrator.passwordHash))) {
+    return res.status(401).json({ error: { code: 'INVALID_CREDENTIALS', message: 'Current password is incorrect.' } });
+  }
+
+  const data = {
+    authVersion: { increment: 1 },
+    ...(input.newEmail ? { email: input.newEmail.toLowerCase() } : {}),
+    ...(input.newPassword ? { passwordHash: await bcrypt.hash(input.newPassword, 12) } : {})
+  };
+  const updated = await db.administrator.update({
+    where: { id: administrator.id },
+    data,
+    select: { id: true, email: true, role: true, authVersion: true }
+  });
+  const token = jwt.sign({
+    sub: updated.id,
+    role: updated.role,
+    authVersion: updated.authVersion
+  }, process.env.JWT_SECRET, { expiresIn: '8h', issuer: 'solarwise-sa' });
+  res.json({ token, email: updated.email, expiresIn: 28800 });
 }
 
 async function overview(_req, res) {
@@ -78,6 +115,6 @@ async function closeTariff(req, res) {
 }
 
 module.exports = {
-  login, overview, listProvinces, listMunicipalities, createMunicipality,
+  login, updateCredentials, overview, listProvinces, listMunicipalities, createMunicipality,
   listTariffs, createTariff, closeTariff
 };

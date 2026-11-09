@@ -12,7 +12,8 @@
     "db:deploy": "node backend/scripts/prisma-command.js migrate deploy",
     "db:status": "node backend/scripts/prisma-command.js migrate status",
     "db:check": "node backend/scripts/db-check.js",
-    "db:seed": "node backend/scripts/prisma-command.js db seed"
+    "db:seed": "node backend/prisma/seed.js",
+    "db:seed:if-configured": "node backend/scripts/seed-if-configured.js"
   },
   "dependencies": {
     "@prisma/client": "^6.10.1",

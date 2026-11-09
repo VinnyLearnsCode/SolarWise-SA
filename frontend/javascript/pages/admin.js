@@ -5,11 +5,14 @@ loginForm?.addEventListener('submit', async (event) => {
   const errorNode = document.getElementById('admin-error');
   errorNode.textContent = '';
   try {
-    const { token } = await SolarAPI.post('/admin/login', values);
+    const { token, email } = await SolarAPI.post('/admin/login', values);
     sessionStorage.setItem('solarwise-admin-token', token);
+    sessionStorage.setItem('solarwise-admin-email', email);
     await loadOverview(token);
   } catch (error) {
     errorNode.textContent = error.message;
+  } finally {
+    loginForm.querySelector('[name="password"]').value = '';
   }
 });
 
@@ -28,6 +31,16 @@ async function loadOverview(token, notice = '') {
       <h2>Platform overview</h2>
       <div class="admin-stats">${Object.entries(overview.counts).map(([label, count]) => `<div class="admin-stat"><small>${SolarFormat.escape(label)}</small><strong>${SolarFormat.number(count)}</strong></div>`).join('')}</div>
       <p class="form-error" id="admin-message" role="status">${SolarFormat.escape(notice)}</p>
+      <form id="admin-credentials-form" class="form-panel admin-credentials">
+        <h2>Change administrator credentials</h2>
+        <p>Signed in as <strong>${SolarFormat.escape(sessionStorage.getItem('solarwise-admin-email') || 'Administrator')}</strong>. Verify your current password to change your email, password, or both. Updating credentials signs out other active sessions.</p>
+        <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required maxlength="200"></label>
+        <label>New email <span class="hint">leave blank to keep the current email</span><input name="newEmail" type="email" autocomplete="email" maxlength="254"></label>
+        <label>New password <span class="hint">leave blank to keep the current password; at least 12 characters</span><input name="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="200"></label>
+        <label>Confirm new password<input name="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="200"></label>
+        <button class="button secondary" type="submit">Update credentials</button>
+        <p class="form-error" id="admin-credentials-message" role="status" aria-live="polite"></p>
+      </form>
       <div class="admin-management">
         <form id="municipality-form" class="form-panel">
           <h2>Add municipality</h2>
@@ -65,8 +78,42 @@ async function loadOverview(token, notice = '') {
     loginForm.hidden = true;
     document.getElementById('admin-logout').addEventListener('click', () => {
       sessionStorage.removeItem('solarwise-admin-token');
+      sessionStorage.removeItem('solarwise-admin-email');
       section.hidden = true;
       loginForm.hidden = false;
+    });
+    document.getElementById('admin-credentials-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const values = Object.fromEntries(new FormData(form));
+      const message = form.querySelector('#admin-credentials-message');
+      message.textContent = '';
+      try {
+        if (values.newPassword !== values.confirmPassword) {
+          throw new Error('The new passwords do not match.');
+        }
+        if (!values.newEmail.trim() && !values.newPassword) {
+          throw new Error('Enter a new email address, a new password, or both.');
+        }
+        const result = await SolarAPI.request('/admin/credentials', {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            currentPassword: values.currentPassword,
+            ...(values.newEmail.trim() ? { newEmail: values.newEmail.trim() } : {}),
+            ...(values.newPassword ? { newPassword: values.newPassword } : {})
+          })
+        });
+        sessionStorage.setItem('solarwise-admin-token', result.token);
+        sessionStorage.setItem('solarwise-admin-email', result.email);
+        await loadOverview(result.token, 'Credentials updated. Other active sessions have been signed out.');
+      } catch (error) {
+        message.textContent = error.message;
+      } finally {
+        form.querySelector('[name="currentPassword"]').value = '';
+        form.querySelector('[name="newPassword"]').value = '';
+        form.querySelector('[name="confirmPassword"]').value = '';
+      }
     });
     document.getElementById('municipality-form').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -99,6 +146,9 @@ async function loadOverview(token, notice = '') {
     }));
   } catch (error) {
     sessionStorage.removeItem('solarwise-admin-token');
+    sessionStorage.removeItem('solarwise-admin-email');
+    document.getElementById('admin-overview').hidden = true;
+    loginForm.hidden = false;
     document.getElementById('admin-error').textContent = error.message;
   }
 }

@@ -6,7 +6,7 @@ services:
     plan: free
     buildCommand: npm ci && npm run db:generate
     # Free previews apply checked-in migrations before startup; paid deployments should use preDeployCommand.
-    startCommand: npm run db:deploy && npm start
+    startCommand: npm run db:deploy && npm run db:seed:if-configured && npm start
     healthCheckPath: /api/health/ready
     envVars:
       - key: NODE_ENV
@@ -17,6 +17,10 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
+      - key: ADMIN_EMAIL
+        value: abutvincent23@gmail.com
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: FRONTEND_ORIGIN
         value: https://solarwise-sa-vinny-preview.onrender.com
       - key: PUBLIC_SITE_URL

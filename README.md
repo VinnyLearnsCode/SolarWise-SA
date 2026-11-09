@@ -39,13 +39,13 @@ Core calculations and static pages can run without PostgreSQL. Database-backed f
    npm run db:migrate
    ```
 
-5. To initialise reference provinces and an administrator, set `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` of at least 12 characters in `.env`, then run:
+5. To initialise reference provinces and an administrator, set `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` of 12–200 characters in `.env`, then run:
 
    ```powershell
    npm run db:seed
    ```
 
-   Seeding is optional for stateless calculators. It never uses bundled credentials.
+   The password is hashed before storage. Re-running this command updates the administrator password and invalidates existing sessions. Seeding is optional for stateless calculators; no default credentials are provided.
 6. Start the server and open [http://localhost:3000](http://localhost:3000):
 
    ```powershell
@@ -62,6 +62,8 @@ Core calculations and static pages can run without PostgreSQL. Database-backed f
 - `npm run db:migrate` applies development migrations.
 - `npm run db:deploy` applies checked-in migrations in a deployment; back up the database first.
 - `npm run db:seed` creates/updates province reference records and the administrator specified by `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+
+The Render start command applies migrations and creates the initial administrator only when both admin environment variables are set and no administrator exists. Set them in the Render service's Environment settings, deploy, and sign in at `/html/dashboard.html`. The dashboard lets the signed-in administrator change the account email and/or password after verifying the current password; credential changes invalidate other active sessions. Bootstrap never overwrites an existing administrator.
 
 The server does not run schema changes on startup. If PostgreSQL is not configured, public pages and non-database calculators remain available; database-dependent routes return an explicit error. Read [installation instructions](documentation/installation.md) for troubleshooting and production notes.
 

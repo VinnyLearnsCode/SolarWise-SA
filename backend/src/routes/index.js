@@ -25,6 +25,7 @@ router.post('/calculations/loan', calculations.postLoan);
 router.post('/calculations/usage', calculations.postUsage);
 router.post('/calculations/battery', calculations.postBattery);
 router.post('/admin/login', admin.login);
+router.put('/admin/credentials', requireAdmin, admin.updateCredentials);
 router.get('/admin/overview', requireAdmin, admin.overview);
 router.get('/admin/provinces', requireAdmin, admin.listProvinces);
 router.get('/admin/municipalities', requireAdmin, admin.listMunicipalities);

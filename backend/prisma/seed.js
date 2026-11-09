@@ -1,11 +1,11 @@
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
+const { z } = require('zod');
 const { PrismaClient } = require('@prisma/client');
 
 async function main() {
-  if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length < 12) {
-    throw new Error('Set ADMIN_EMAIL and an ADMIN_PASSWORD of at least 12 characters before seeding.');
-  }
+  const email = z.string().trim().email().max(254).parse(process.env.ADMIN_EMAIL || '');
+  const password = z.string().min(12).max(200).parse(process.env.ADMIN_PASSWORD || '');
   const prisma = new PrismaClient();
   try {
     const provinces = [
@@ -16,11 +16,11 @@ async function main() {
     await Promise.all(provinces.map(([name, code]) => prisma.province.upsert({
       where: { code }, update: { name }, create: { name, code }
     })));
-    const passwordHash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 12);
+    const passwordHash = await bcrypt.hash(password, 12);
     await prisma.administrator.upsert({
-      where: { email: process.env.ADMIN_EMAIL.toLowerCase() },
-      update: { passwordHash },
-      create: { email: process.env.ADMIN_EMAIL.toLowerCase(), passwordHash, role: 'ADMIN' }
+      where: { email: email.toLowerCase() },
+      update: { passwordHash, authVersion: { increment: 1 } },
+      create: { email: email.toLowerCase(), passwordHash, role: 'ADMIN' }
     });
     console.log('Administrator account configured.');
   } finally {

@@ -96,7 +96,7 @@ npm test
 
 `db:migrate` uses Prisma development migrations and is intended for local development. In a deployment, use `npm run db:deploy` to apply checked-in migrations; do not use development migration commands in production. Migrations are never applied automatically at server startup. `db:check` verifies PostgreSQL connectivity with a simple query, while `db:status` reports migration state.
 
-To populate provinces and create the optional administrator, set both admin variables in `.env`, then run:
+To populate provinces and create/update the optional administrator, set both admin variables in `.env` (`ADMIN_EMAIL` must be a valid email address; `ADMIN_PASSWORD` must be 12–200 characters), then run:
 
 ```powershell
 npm run db:seed

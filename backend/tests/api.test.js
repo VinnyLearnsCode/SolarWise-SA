@@ -1,14 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const jwt = require('jsonwebtoken');
 const app = require('../app');
 
 test('health endpoint responds without a database connection', async (context) => {
   const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousJwtSecret = process.env.JWT_SECRET;
   process.env.DATABASE_URL = '';
+  process.env.JWT_SECRET = '';
   const server = app.listen(0);
   context.after(() => {
     if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = previousDatabaseUrl;
+    if (previousJwtSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = previousJwtSecret;
     return new Promise((resolve) => server.close(resolve));
   });
   await new Promise((resolve) => server.once('listening', resolve));
@@ -17,6 +22,42 @@ test('health endpoint responds without a database connection', async (context) =
   const health = await fetch(`${base}/api/health`);
   assert.equal(health.status, 200);
   assert.equal((await health.json()).status, 'ok');
+  const adminOverview = await fetch(`${base}/api/admin/overview`);
+  assert.equal(adminOverview.status, 401);
+  assert.equal((await adminOverview.json()).error.code, 'UNAUTHORIZED');
+  const adminCredentialUpdate = await fetch(`${base}/api/admin/credentials`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ currentPassword: 'a-current-password', newPassword: 'a-new-password-123' })
+  });
+  assert.equal(adminCredentialUpdate.status, 401);
+  assert.equal((await adminCredentialUpdate.json()).error.code, 'UNAUTHORIZED');
+  const adminLogin = await fetch(`${base}/api/admin/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'admin@example.com', password: 'not-a-real-password' })
+  });
+  assert.equal(adminLogin.status, 503);
+  assert.equal((await adminLogin.json()).error.code, 'AUTH_NOT_CONFIGURED');
+  process.env.JWT_SECRET = 'test-secret-with-at-least-32-characters';
+  const legacyToken = jwt.sign(
+    { sub: 'administrator-id', role: 'ADMIN' },
+    process.env.JWT_SECRET,
+    { expiresIn: '1m', issuer: 'solarwise-sa' }
+  );
+  const legacyAdminRequest = await fetch(`${base}/api/admin/overview`, {
+    headers: { authorization: `Bearer ${legacyToken}` }
+  });
+  assert.equal(legacyAdminRequest.status, 401);
+  assert.equal((await legacyAdminRequest.json()).error.code, 'UNAUTHORIZED');
+  const nonAdminToken = jwt.sign(
+    { sub: 'user-id', role: 'USER', authVersion: 0 },
+    process.env.JWT_SECRET,
+    { expiresIn: '1m', issuer: 'solarwise-sa' }
+  );
+  const nonAdminRequest = await fetch(`${base}/api/admin/overview`, {
+    headers: { authorization: `Bearer ${nonAdminToken}` }
+  });
+  assert.equal(nonAdminRequest.status, 401);
+  assert.equal((await nonAdminRequest.json()).error.code, 'UNAUTHORIZED');
 
   const homepage = await fetch(`${base}/html/index.html`);
   assert.equal(homepage.status, 200);
@@ -66,6 +107,10 @@ test('health endpoint responds without a database connection', async (context) =
   const dashboardHtml = await dashboard.text();
   assert.match(dashboardHtml, /<meta name="robots" content="noindex, nofollow">/);
   assert.doesNotMatch(dashboardHtml, /rel="canonical"/);
+  const adminScript = await (await fetch(`${base}/javascript/pages/admin.js`)).text();
+  assert.match(adminScript, /Change administrator credentials/);
+  assert.match(adminScript, /current-password/);
+  assert.match(adminScript, /new-password/);
   const missingPage = await fetch(`${base}/this-page-does-not-exist`, { headers: { accept: 'text/html' } });
   assert.equal(missingPage.status, 404);
   assert.match(await missingPage.text(), /That page isn't/);
