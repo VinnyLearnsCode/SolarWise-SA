@@ -40,9 +40,11 @@ test('weather retries a transient upstream response and returns validated data',
     delay: process.env.OPEN_METEO_RETRY_DELAY_MS
   };
   let attempts = 0;
+  let requestUrl;
   process.env.OPEN_METEO_RETRIES = '1';
   process.env.OPEN_METEO_RETRY_DELAY_MS = '0';
-  global.fetch = async () => {
+  global.fetch = async (url) => {
+    requestUrl = url;
     attempts += 1;
     if (attempts === 1) return new Response('temporary error', { status: 503 });
     return new Response(JSON.stringify({
@@ -56,6 +58,7 @@ test('weather retries a transient upstream response and returns validated data',
     assert.equal(attempts, 2);
     assert.equal(result.source, 'Open-Meteo');
     assert.equal(result.data.current.temperature_2m, 20);
+    assert.match(new URL(requestUrl).searchParams.get('current'), /(?:^|,)is_day(?:,|$)/);
     assert.equal(result.cached, false);
   } finally {
     global.fetch = originalFetch;
@@ -203,6 +206,8 @@ test('weather falls back to MET Norway when Open-Meteo rate-limits requests', as
     assert.equal(result.source, 'MET Norway Locationforecast');
     assert.equal(result.dataType, 'weather forecast');
     assert.equal(result.data.current.temperature_2m, 16);
+    assert.equal(typeof result.data.current.is_day, 'number');
+    assert.equal(result.timezone, 'Africa/Johannesburg');
     assert.equal(result.data.current.wind_speed_10m, 10.8);
     assert.equal(result.data.daily.time.length, 2);
     assert.equal(result.data.daily.temperature_2m_max[1], 20);

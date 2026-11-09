@@ -76,10 +76,27 @@ function renderSolar(solar, peakPower) {
 function renderWeather(weather, place) {
   const current = weather.data.current || {};
   const daily = weather.data.daily || {};
+  const timezone = weather.data.timezone || 'Africa/Johannesburg';
   const indices = (daily.time || []).map((_, index) => index);
   if (weather.source === 'Open-Meteo') indices.splice(0, Math.max(0, indices.length - 7));
   else indices.splice(7);
   const currentCondition = describeWeather(current.cloud_cover, current.precipitation);
+  const isNight = current.is_day === 0 || current.is_day === false
+    || (current.is_day !== 1 && current.is_day !== true && isNightAtLocalTime(current.time, timezone));
+  const nightIcon = {
+    sun: 'moon',
+    'partly-cloudy': 'partly-cloudy-night',
+    rain: 'rain-night'
+  }[currentCondition.icon];
+  const currentIcon = isNight ? nightIcon || currentCondition.icon : currentCondition.icon;
+  const currentLabel = {
+    moon: 'Mostly clear night',
+    'partly-cloudy-night': 'Partly cloudy night',
+    'rain-night': 'Rain likely tonight'
+  }[currentIcon] || currentCondition.label;
+  const moonPhase = currentIcon === 'moon' || currentIcon === 'partly-cloudy-night' || currentIcon === 'rain-night'
+    ? getMoonPhase(current.time, timezone)
+    : null;
   const currentTemperature = formatWeatherNumber(current.temperature_2m, 0);
   const forecast = indices.map((index) => {
     const condition = describeWeather(daily.cloud_cover_mean?.[index], daily.precipitation_sum?.[index]);
@@ -91,8 +108,8 @@ function renderWeather(weather, place) {
   const freshness = weather.stale ? ' · stale cached data' : weather.cached ? ' · cached' : '';
   return `<section class="weather-card" aria-label="Weather forecast for ${SolarFormat.escape(place)}">
       <div class="weather-visual">
-        <div class="weather-current-icon" role="img" aria-label="${currentCondition.label}">${weatherIcon(currentCondition.icon)}</div>
-        <div class="weather-current-copy"><span>Current conditions · ${SolarFormat.escape(weather.data.timezone || place)}</span><strong>${currentTemperature}°</strong><p>${currentCondition.label}</p></div>
+        <div class="weather-current-icon" role="img" aria-label="${currentLabel}${moonPhase ? ` · ${moonPhase.label}` : ''}">${weatherIcon(currentIcon, moonPhase)}</div>
+        <div class="weather-current-copy"><span>Current conditions · ${SolarFormat.escape(weather.data.timezone || place)}</span><strong>${currentTemperature}°</strong><p>${currentLabel}</p></div>
       </div>
       <div class="weather-forecast" aria-label="Forecast temperature range for the coming days">${forecast || '<p>Daily forecast is not available.</p>'}</div>
       <div class="weather-stats" aria-label="Current weather details"><div><span>Temperature</span><strong>${currentTemperature}°C</strong></div><div><span>Cloud cover</span><strong>${formatWeatherNumber(current.cloud_cover, 0)}%</strong></div><div><span>Precipitation</span><strong>${formatWeatherNumber(current.precipitation, 1)} mm</strong></div><div><span>Humidity</span><strong>${formatWeatherNumber(current.relative_humidity_2m, 0)}%</strong></div><div><span>Wind</span><strong>${formatWeatherNumber(current.wind_speed_10m, 0)} km/h</strong></div></div>
@@ -107,7 +124,14 @@ function describeWeather(cloudCover, precipitation) {
   return { icon: 'sun', label: 'Mostly clear' };
 }
 
-function weatherIcon(condition) {
+function weatherIcon(condition, moonPhase) {
+  if (condition === 'moon' || condition === 'partly-cloudy-night' || condition === 'rain-night') {
+    const moon = moonPhase ? renderMoon(moonPhase) : '<circle class="weather-moon" cx="40" cy="40" r="18"/>';
+    const cloud = condition === 'partly-cloudy-night' || condition === 'rain-night'
+      ? `<path class="weather-cloud" d="M17 59h42a13 13 0 0 0 0-26 20 20 0 0 0-38-3 15 15 0 0 0-4 29Z"/>${condition === 'rain-night' ? '<path class="weather-rain" d="m28 61-4 8m18-8-4 8m18-8-4 8"/>' : ''}`
+      : '';
+    return `<svg viewBox="0 0 80 80" aria-hidden="true">${moon}${cloud}</svg>`;
+  }
   if (condition === 'rain') {
     return '<svg viewBox="0 0 80 80" aria-hidden="true"><circle class="weather-sun" cx="52" cy="27" r="13"/><path class="weather-cloud" d="M20 51h39a12 12 0 0 0 0-24 19 19 0 0 0-36-2 13 13 0 0 0-3 26Z"/><path class="weather-rain" d="m28 59-4 9m18-9-4 9m18-9-4 9"/></svg>';
   }
@@ -118,6 +142,79 @@ function weatherIcon(condition) {
     return '<svg viewBox="0 0 80 80" aria-hidden="true"><circle class="weather-sun" cx="52" cy="28" r="15"/><path class="weather-cloud" d="M17 59h42a13 13 0 0 0 0-26 20 20 0 0 0-38-3 15 15 0 0 0-4 29Z"/></svg>';
   }
   return '<svg viewBox="0 0 80 80" aria-hidden="true"><circle class="weather-sun" cx="40" cy="40" r="17"/><path class="weather-sun-rays" d="M40 8v9m0 46v9M8 40h9m46 0h9M17 17l7 7m32 32 7 7m0-46-7 7M24 56l-7 7"/></svg>';
+}
+
+function isNightAtLocalTime(observationTime, timezone) {
+  if (typeof observationTime === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(observationTime)) {
+    if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(observationTime)) {
+      const localHour = Number(observationTime.slice(11, 13));
+      return localHour < 6 || localHour >= 18;
+    }
+    const parts = new Intl.DateTimeFormat('en-ZA', {
+      timeZone: timezone,
+      hour: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(new Date(observationTime));
+    const hour = Number(parts.find((part) => part.type === 'hour').value);
+    return hour < 6 || hour >= 18;
+  }
+  const hour = Number(new Intl.DateTimeFormat('en-ZA', {
+    timeZone: timezone,
+    hour: '2-digit',
+    hourCycle: 'h23'
+  }).format(new Date()));
+  return hour < 6 || hour >= 18;
+}
+
+function getMoonPhase(observationTime, timezone) {
+  let localDate;
+  if (typeof observationTime === 'string' && /^\d{4}-\d{2}-\d{2}/.test(observationTime)) {
+    if (/(?:Z|[+-]\d{2}:\d{2})$/i.test(observationTime)) {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).formatToParts(new Date(observationTime));
+      const part = (type) => parts.find((item) => item.type === type).value;
+      localDate = `${part('year')}-${part('month')}-${part('day')}`;
+    } else {
+      localDate = observationTime.slice(0, 10);
+    }
+  } else {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(new Date());
+    const part = (type) => parts.find((item) => item.type === type).value;
+    localDate = `${part('year')}-${part('month')}-${part('day')}`;
+  }
+  const [year, month, day] = localDate.split('-').map(Number);
+  const daysSinceNewMoon = (Date.UTC(year, month - 1, day, 12) - Date.UTC(2000, 0, 6, 18, 14))
+    / 86400000;
+  const age = ((daysSinceNewMoon % 29.530588853) + 29.530588853) % 29.530588853;
+  const phase = age / 29.530588853;
+  const label = phase < 0.03 || phase >= 0.97 ? 'New moon'
+    : phase < 0.22 ? 'Waxing crescent'
+      : phase < 0.28 ? 'First quarter'
+        : phase < 0.47 ? 'Waxing gibbous'
+          : phase < 0.53 ? 'Full moon'
+            : phase < 0.72 ? 'Waning gibbous'
+              : phase < 0.78 ? 'Last quarter'
+                : 'Waning crescent';
+  return { phase, label };
+}
+
+function renderMoon(moonPhase) {
+  const phase = moonPhase.phase;
+  const terminatorRadius = 18 * Math.abs(Math.cos(phase * 2 * Math.PI));
+  const terminatorSweep = phase >= 0.25 && phase < 0.75 ? 1 : 0;
+  const path = `M40 22 A18 18 0 0 1 40 58 A${terminatorRadius.toFixed(2)} 18 0 0 ${terminatorSweep} 40 22Z`;
+  const latitude = Number(document.getElementById('location').value.split('|')[0].split(',')[0]);
+  const mirrored = (phase >= 0.5) !== (latitude < 0);
+  return `<defs><clipPath id="moon-disc"><circle cx="40" cy="40" r="18"/></clipPath></defs><circle class="weather-moon-shadow" cx="40" cy="40" r="18"/><path class="weather-moon" d="${path}" clip-path="url(#moon-disc)"${mirrored ? ' transform="translate(80 0) scale(-1 1)"' : ''}/>`;
 }
 
 function formatWeatherNumber(value, digits) {

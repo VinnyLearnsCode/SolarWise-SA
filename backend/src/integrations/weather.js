@@ -19,7 +19,7 @@ async function getWeather(latitude, longitude, dependencies = {}) {
     url.search = new URLSearchParams({
       latitude: String(latitude),
       longitude: String(longitude),
-      current: 'temperature_2m,relative_humidity_2m,precipitation,cloud_cover,wind_speed_10m',
+      current: 'temperature_2m,relative_humidity_2m,precipitation,cloud_cover,wind_speed_10m,is_day',
       daily: 'temperature_2m_max,temperature_2m_min,precipitation_sum,cloud_cover_mean,shortwave_radiation_sum',
       past_days: '7',
       forecast_days: '7',
@@ -119,10 +119,10 @@ async function fetchMetNorwayForecast(latitude, longitude, dependencies) {
     }
   });
   if (!response.ok) throw serviceError('MET Norway', response.status);
-  return normalizeMetNorwayForecast(await response.json());
+  return normalizeMetNorwayForecast(await response.json(), latitude, longitude);
 }
 
-function normalizeMetNorwayForecast(forecast) {
+function normalizeMetNorwayForecast(forecast, latitude, longitude) {
   const timeseries = forecast?.properties?.timeseries;
   if (!Array.isArray(timeseries) || timeseries.length === 0) {
     throw new Error('MET Norway returned an unexpected response shape.');
@@ -162,8 +162,11 @@ function normalizeMetNorwayForecast(forecast) {
     source: 'MET Norway Locationforecast',
     dataType: 'weather forecast',
     retrievedAt: new Date().toISOString(),
+    timezone: 'Africa/Johannesburg',
     data: {
       current: {
+        time: currentEntry.time,
+        is_day: isDaylight(currentEntry.time, latitude, longitude) ? 1 : 0,
         temperature_2m: currentDetails.air_temperature,
         relative_humidity_2m: currentDetails.relative_humidity,
         precipitation: Number.isFinite(currentPrecipitation) ? currentPrecipitation : null,
@@ -183,6 +186,27 @@ function normalizeMetNorwayForecast(forecast) {
       }
     }
   };
+}
+
+function isDaylight(timestamp, latitude, longitude) {
+  const date = new Date(timestamp);
+  const dayOfYear = Math.floor((Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+    - Date.UTC(date.getUTCFullYear(), 0, 0)) / 86400000);
+  const minutes = date.getUTCHours() * 60 + date.getUTCMinutes() + date.getUTCSeconds() / 60;
+  const gamma = 2 * Math.PI / 365 * (dayOfYear - 1 + (minutes / 60 - 12) / 24);
+  const equationOfTime = 229.18 * (0.000075 + 0.001868 * Math.cos(gamma)
+    - 0.032077 * Math.sin(gamma) - 0.014615 * Math.cos(2 * gamma)
+    - 0.040849 * Math.sin(2 * gamma));
+  const declination = 0.006918 - 0.399912 * Math.cos(gamma) + 0.070257 * Math.sin(gamma)
+    - 0.006758 * Math.cos(2 * gamma) + 0.000907 * Math.sin(2 * gamma)
+    - 0.002697 * Math.cos(3 * gamma) + 0.00148 * Math.sin(3 * gamma);
+  const solarMinutes = minutes + equationOfTime + 4 * longitude;
+  const hourAngle = solarMinutes / 4 - 180;
+  const latitudeRadians = latitude * Math.PI / 180;
+  const hourAngleRadians = hourAngle * Math.PI / 180;
+  const cosineZenith = Math.sin(latitudeRadians) * Math.sin(declination)
+    + Math.cos(latitudeRadians) * Math.cos(declination) * Math.cos(hourAngleRadians);
+  return cosineZenith > Math.cos(90.833 * Math.PI / 180);
 }
 
 async function readStoredWeather(prisma, latitude, longitude) {
