@@ -1,4 +1,5 @@
 const locationButton = document.getElementById('load-location');
+let solarChart;
 const requestedPlace = new URLSearchParams(window.location.search).get('place');
 let requestedLocationFound = false;
 if (requestedPlace) {
@@ -10,62 +11,91 @@ if (requestedPlace) {
   }
 }
 locationButton?.addEventListener('click', async () => {
+  const usageInput = document.getElementById('monthly-usage');
+  if (!usageInput.validity.valid) {
+    usageInput.reportValidity();
+    return;
+  }
   const [coords, place] = document.getElementById('location').value.split('|');
   const [latitude, longitude] = coords.split(',');
-  const peakPower = document.getElementById('peak-power').value;
+  const selectedPower = Number(document.getElementById('peak-power').value);
+  const orientation = Number(document.getElementById('orientation').value);
+  const tilt = Number(document.getElementById('tilt').value);
+  const monthlyUsage = usageInput.value.trim() ? Number(usageInput.value) : null;
+  const comparisonSizes = comparisonSystemSizes(selectedPower);
   const output = document.getElementById('location-results');
   const errorNode = document.getElementById('explorer-error');
   errorNode.textContent = '';
-  output.innerHTML = '<div class="empty-state"><span class="empty-icon">…</span><h2>Loading location data</h2><p>Contacting weather and solar data services.</p></div>';
+  output.innerHTML = '<div class="empty-state"><span class="empty-icon">…</span><h2>Building your estimate</h2><p>Checking your location, roof direction, and system sizes.</p></div>';
   locationButton.disabled = true;
-  const [solarResponse, weatherResponse] = await Promise.allSettled([
-    SolarAPI.request(`/solar-potential?latitude=${latitude}&longitude=${longitude}&peakPower=${peakPower}`),
+  const [solarResponses, weatherResponse] = await Promise.all([
+    Promise.allSettled(comparisonSizes.map((size) => SolarAPI.request(
+      solarPotentialUrl(latitude, longitude, size, orientation, tilt)
+    ))),
     SolarAPI.request(`/weather?latitude=${latitude}&longitude=${longitude}`)
+      .then((value) => ({ status: 'fulfilled', value }))
+      .catch((reason) => ({ status: 'rejected', reason }))
   ]);
   locationButton.disabled = false;
-  if (solarResponse.status === 'rejected' && weatherResponse.status === 'rejected') {
-    errorNode.textContent = `${solarResponse.reason.message} ${weatherResponse.reason.message}`;
+  if (solarResponses.every((response) => response.status === 'rejected') && weatherResponse.status === 'rejected') {
+    errorNode.textContent = `${solarResponses[0].reason.message} ${weatherResponse.reason.message}`;
     output.innerHTML = '<div class="empty-state"><h2>Location data unavailable</h2><p>External services did not respond. Please retry later.</p></div>';
     return;
   }
+  const results = solarResponses.map((response, index) => ({
+    size: comparisonSizes[index],
+    status: response.status,
+    ...(response.status === 'fulfilled' ? { solar: response.value } : { error: response.reason.message })
+  }));
+  const solarContext = { results, selectedPower, monthlyUsage, orientation, tilt, latitude, longitude };
   let html = `<div class="eyebrow">${SolarFormat.escape(place)} · data snapshot</div><h2>Solar &amp; weather context</h2>`;
   if (weatherResponse.status === 'fulfilled') {
     html += renderWeather(weatherResponse.value, place);
   } else {
     html += `<p class="form-error">Weather unavailable: ${SolarFormat.escape(weatherResponse.reason.message)}</p>`;
   }
-  if (solarResponse.status === 'fulfilled') {
-    html += `<div id="solar-model-result">${renderSolar(solarResponse.value, peakPower)}</div>`;
-  } else {
-    html += `<div id="solar-model-result" class="solar-model-error" role="status"><p class="form-error">Solar potential unavailable: ${SolarFormat.escape(solarResponse.reason.message)}</p><button class="button secondary" id="retry-solar" type="button">Retry solar model</button></div>`;
-  }
+  html += `<div id="solar-model-result">${renderSolar(solarContext)}</div>`;
   output.innerHTML = html;
-  if (solarResponse.status === 'fulfilled') drawSolarChart(solarResponse.value.data.outputs?.monthly?.fixed || []);
-  else {
-    document.getElementById('retry-solar')?.addEventListener('click', async (event) => {
-      await retrySolarModel(event.currentTarget, latitude, longitude, peakPower);
-    });
-  }
+  bindSolarRetryButtons(document.getElementById('solar-model-result'), solarContext);
+  drawFocusedSolarChart(solarContext);
 });
 if (requestedLocationFound) locationButton.click();
 
-async function retrySolarModel(button, latitude, longitude, peakPower) {
-  const solarResult = document.getElementById('solar-model-result');
-  button.disabled = true;
-  button.textContent = 'Retrying solar model…';
-  try {
-    const solar = await SolarAPI.request(`/solar-potential?latitude=${latitude}&longitude=${longitude}&peakPower=${peakPower}`);
-    solarResult.innerHTML = renderSolar(solar, peakPower);
-    drawSolarChart(solar.data.outputs?.monthly?.fixed || []);
-  } catch (error) {
-    solarResult.innerHTML = `<p class="form-error">Solar potential unavailable: ${SolarFormat.escape(error.message)}</p><button class="button secondary" id="retry-solar" type="button">Retry solar model</button>`;
-    solarResult.querySelector('#retry-solar').addEventListener('click', (event) => {
-      retrySolarModel(event.currentTarget, latitude, longitude, peakPower);
-    });
-  }
+function comparisonSystemSizes(selectedPower) {
+  const availableSizes = [3, 5, 8, 10, 15];
+  const selectedIndex = availableSizes.indexOf(selectedPower);
+  const start = Math.max(0, Math.min(selectedIndex - 1, availableSizes.length - 3));
+  return availableSizes.slice(start, start + 3);
 }
 
-function renderSolar(solar, peakPower) {
+function solarPotentialUrl(latitude, longitude, peakPower, orientation, tilt) {
+  const query = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+    peakPower: String(peakPower),
+    orientation: String(orientation),
+    tilt: String(tilt)
+  });
+  return `/solar-potential?${query}`;
+}
+
+function renderSolar(context) {
+  const selectedResult = context.results.find((result) => result.size === context.selectedPower);
+  const orientation = document.getElementById('orientation').selectedOptions[0].textContent.split(' · ')[0];
+  const cards = context.results.map((result, index) => renderComparisonCard(result, index, context.selectedPower)).join('');
+  const selectedError = selectedResult.status === 'rejected'
+    ? `<div class="solar-focused-error" role="status"><p class="form-error">The ${selectedResult.size} kWp estimate is unavailable: ${SolarFormat.escape(selectedResult.error)}</p><button class="button secondary solar-retry" type="button" data-result-index="${context.results.indexOf(selectedResult)}">Retry this estimate</button></div>`
+    : renderFocusedEstimate(selectedResult.solar, selectedResult.size, context.monthlyUsage, orientation, context.tilt);
+  return `<section class="solar-potential" aria-labelledby="solar-potential-title">
+      <div class="solar-potential-heading"><span class="eyebrow">STEP 3 · YOUR ESTIMATE</span><h3 id="solar-potential-title">What could solar produce at your home?</h3><p>Modeled for ${SolarFormat.escape(orientation.toLowerCase())}-facing panels tilted ${SolarFormat.escape(context.tilt)}°. These are production estimates, not guaranteed savings.</p></div>
+      <div class="solar-focused-estimate" id="solar-focused-estimate">${selectedError}</div>
+      <section class="solar-comparison" aria-labelledby="solar-comparison-title"><h4 id="solar-comparison-title">Compare nearby system sizes</h4><p>All sizes use the same location and roof details. Select another focus size above to compare a different range.</p><div class="solar-comparison-grid">${cards}</div></section>
+      <p class="solar-potential-note"><strong>Remember:</strong> kWh measures energy; kWp is a system's rated capacity. Real output varies with season, shade, roof condition, and installation. Matching solar generation to your use does not mean your bill will fall by the same amount.</p>
+      <details class="solar-potential-details"><summary>About these estimates</summary><p>Modeled by ${SolarFormat.escape(selectedResult.solar?.source || 'PVGIS')} for ${SolarFormat.escape(orientation.toLowerCase())}-facing panels tilted ${SolarFormat.escape(context.tilt)}°, with 14% assumed system losses. North is the selected default for South African locations. Annual generation divided by 12 is only an average; actual production is seasonal. Savings depend on when you use electricity, your tariff, system design, and export credits.</p></details>
+    </section>`;
+}
+
+function renderFocusedEstimate(solar, peakPower, monthlyUsage, orientation, tilt) {
   const annual = solar.data?.outputs?.totals?.fixed?.E_y;
   const hasAnnualEstimate = Number.isFinite(annual);
   const monthly = (solar.data?.outputs?.monthly?.fixed || [])
@@ -73,18 +103,64 @@ function renderSolar(solar, peakPower) {
   const annualEstimate = hasAnnualEstimate ? SolarFormat.number(annual) : 'Unavailable';
   const averageMonthlyEstimate = hasAnnualEstimate ? `${SolarFormat.number(annual / 12)} kWh` : 'Unavailable';
   const averageDailyEstimate = hasAnnualEstimate ? `${SolarFormat.number(annual / 365, 1)} kWh` : 'Unavailable';
+  const usageMatch = hasAnnualEstimate && monthlyUsage
+    ? `<div class="solar-usage-match"><span>Compared with your ${SolarFormat.number(monthlyUsage)} kWh monthly use</span><strong>Average solar generation equals about ${SolarFormat.number((annual / 12) / monthlyUsage * 100)}% of that amount</strong><small>This is an energy comparison, not a bill-savings or self-sufficiency estimate. Solar may be generated at different times from when you use power.</small></div>`
+    : monthlyUsage
+      ? '<p class="solar-usage-match">Your electricity-use comparison is unavailable because the annual estimate was not returned.</p>'
+      : '<p class="solar-usage-prompt">Add your monthly kWh use on the left to see how generation compares with your home’s typical use.</p>';
   const freshness = solar.stale ? ' · older cached result' : solar.cached ? ' · cached' : '';
-  return `<section class="solar-potential" aria-labelledby="solar-potential-title">
-      <div class="solar-potential-heading"><span class="eyebrow">Solar estimate</span><h3 id="solar-potential-title">What could this system produce?</h3><p>For the selected location and system size, the model estimates how much solar energy the panels could generate.</p></div>
+  return `<div class="solar-focused-content">
       <div class="solar-potential-summary">
         <div class="solar-potential-annual"><span>Estimated energy in a typical year</span><strong>${annualEstimate}</strong><b>kWh per year</b><p>With a ${SolarFormat.escape(peakPower)} kWp solar system</p></div>
         <div class="solar-potential-average"><span>Average month</span><strong>${averageMonthlyEstimate}</strong><small>Yearly estimate divided by 12</small></div>
         <div class="solar-potential-average"><span>Average day</span><strong>${averageDailyEstimate}</strong><small>Yearly estimate divided by 365</small></div>
       </div>
-      <p class="solar-potential-note"><strong>How to read this:</strong> kWh is energy produced. kWp is the system's rated peak capacity. Actual generation changes with seasons, weather, roof direction, shade, and installation.</p>
-      ${monthly.length ? `<div class="solar-potential-chart"><h4>How generation changes through the year</h4><p>Each bar shows modeled energy for that month. Summer and winter output can differ.</p><div class="chart-wrap"><canvas id="solar-chart" role="img" aria-label="Estimated solar energy in kilowatt-hours for each month"></canvas></div></div>` : ''}
-      <details class="solar-potential-details"><summary>About this estimate</summary><p>Modeled by ${SolarFormat.escape(solar.source)} (${SolarFormat.escape(solar.dataType)}), retrieved ${new Date(solar.retrievedAt).toLocaleString('en-ZA')}${freshness}. The model assumes a fixed, south-facing system tilted at 30° with 14% system losses. This is a production estimate, not a savings estimate or a guarantee. Savings depend on when you use electricity, your tariff, and any export credits.</p></details>
-    </section>`;
+      ${usageMatch}
+      ${monthly.length ? `<div class="solar-potential-chart"><h4>How generation changes through the year</h4><p>Bars show estimated energy for each month; sunny-season and winter output can differ.</p><div class="chart-wrap"><canvas id="solar-chart" role="img" aria-label="Estimated solar energy in kilowatt-hours for each month"></canvas></div></div>` : ''}
+      <p class="solar-model-provenance">${SolarFormat.escape(solar.source)} · ${SolarFormat.escape(solar.dataType)} · retrieved ${new Date(solar.retrievedAt).toLocaleString('en-ZA')}${freshness} · ${SolarFormat.escape(orientation)} facing · ${SolarFormat.escape(tilt)}° tilt · 14% assumed system loss.</p>
+    </div>`;
+}
+
+function renderComparisonCard(result, index, selectedPower) {
+  const selected = result.size === selectedPower;
+  if (result.status === 'rejected') {
+    return `<article class="solar-comparison-card${selected ? ' is-selected' : ''}"><span class="solar-comparison-size">${result.size} kWp</span>${selected ? '<span class="solar-selected-tag">Your focus</span>' : ''}<p class="form-error">Estimate unavailable</p><button class="button secondary solar-retry" type="button" data-result-index="${index}">Retry ${result.size} kWp</button></article>`;
+  }
+  const annual = result.solar.data?.outputs?.totals?.fixed?.E_y;
+  return `<article class="solar-comparison-card${selected ? ' is-selected' : ''}"><div class="solar-comparison-card-heading"><span class="solar-comparison-size">${result.size} kWp</span>${selected ? '<span class="solar-selected-tag">Your focus</span>' : ''}</div>${Number.isFinite(annual) ? `<strong>${SolarFormat.number(annual)} <small>kWh/year</small></strong><span>About ${SolarFormat.number(annual / 12)} kWh in an average month</span>` : '<p class="form-error">Annual production was not returned.</p>'}</article>`;
+}
+
+function bindSolarRetryButtons(container, context) {
+  container.querySelectorAll('.solar-retry').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const index = Number(button.dataset.resultIndex);
+      const result = context.results[index];
+      button.disabled = true;
+      button.textContent = 'Retrying…';
+      try {
+        result.solar = await SolarAPI.request(solarPotentialUrl(
+          context.latitude,
+          context.longitude,
+          result.size,
+          context.orientation,
+          context.tilt
+        ));
+        result.status = 'fulfilled';
+        delete result.error;
+      } catch (error) {
+        result.status = 'rejected';
+        result.error = error.message;
+      }
+      container.innerHTML = renderSolar(context);
+      bindSolarRetryButtons(container, context);
+      drawFocusedSolarChart(context);
+    });
+  });
+}
+
+function drawFocusedSolarChart(context) {
+  const selected = context.results.find((result) => result.size === context.selectedPower);
+  drawSolarChart(selected?.solar?.data?.outputs?.monthly?.fixed || []);
 }
 
 function renderWeather(weather, place) {
@@ -236,11 +312,14 @@ function formatWeatherNumber(value, digits) {
 }
 
 function drawSolarChart(monthly) {
+  solarChart?.destroy();
+  solarChart = null;
   if (!monthly.length || !window.Chart) return;
   const canvas = document.getElementById('solar-chart');
+  if (!canvas) return;
   const labels = monthly.map((month) => month.month);
   const values = monthly.map((month) => month.E_m);
-  new Chart(canvas, {
+  solarChart = new Chart(canvas, {
     type: 'bar',
     data: { labels, datasets: [{ label: 'Modeled monthly solar energy (kWh)', data: values, backgroundColor: '#42a8ed', borderRadius: 7 }] },
     options: {

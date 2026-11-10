@@ -75,6 +75,8 @@ The Explorer's current-condition icon follows the selected location's day/night 
 
 Open-Meteo, MET Norway, and PVGIS require outbound DNS/network access. Open-Meteo may return HTTP 429 when request limits are reached; SolarWise avoids retrying those responses and uses MET Norway or recent cached data when available.
 
+The Solar Explorer defaults PVGIS to north-facing panels for South African locations (PVGIS azimuth `180°`; its `0°` azimuth is south-facing). Users can adjust direction and tilt, enter optional monthly electricity use for a generation-to-usage comparison, and compare three nearby system sizes. The usage comparison is not a bill-savings or self-sufficiency estimate; seasonal output and the timing of generation and use matter.
+
 No tariff schedule is bundled as current. Users enter their own tariff or use administrator-maintained tariff records with source and effective dates. See [calculation methodology](documentation/calculation-methodology.md) for assumptions.
 
 ## Documentation

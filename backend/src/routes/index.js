@@ -40,7 +40,9 @@ router.get('/weather', async (req, res) => {
 router.get('/solar-potential', async (req, res) => {
   const { latitude, longitude } = coordinates(req.query);
   const peakPower = z.coerce.number().positive().max(1000).default(1).parse(req.query.peakPower);
-  res.json(await getSolarPotential(latitude, longitude, peakPower));
+  const orientation = z.coerce.number().min(-180).max(180).default(180).parse(req.query.orientation);
+  const tilt = z.coerce.number().min(0).max(90).default(30).parse(req.query.tilt);
+  res.json(await getSolarPotential(latitude, longitude, peakPower, orientation, tilt));
 });
 router.get('/tariffs', async (_req, res) => {
   try {

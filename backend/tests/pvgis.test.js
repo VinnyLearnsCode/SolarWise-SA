@@ -28,8 +28,53 @@ test('PVGIS retries transient server failures and returns the modeled result', a
     assert.equal(attempts, 2);
     assert.equal(requestUrl.pathname, '/api/v5_3/PVcalc');
     assert.equal(requestUrl.searchParams.get('peakpower'), '5');
+    assert.equal(requestUrl.searchParams.get('aspect'), '180');
+    assert.equal(requestUrl.searchParams.get('angle'), '30');
     assert.equal(result.data.outputs.totals.fixed.E_y, 5200);
+    assert.equal(result.orientation, 180);
+    assert.equal(result.tilt, 30);
     assert.equal(result.source, 'European Commission Joint Research Centre PVGIS');
+  } finally {
+    global.fetch = originalFetch;
+    if (previous.retries === undefined) delete process.env.PVGIS_RETRIES;
+    else process.env.PVGIS_RETRIES = previous.retries;
+    if (previous.delay === undefined) delete process.env.PVGIS_RETRY_DELAY_MS;
+    else process.env.PVGIS_RETRY_DELAY_MS = previous.delay;
+    if (previous.timeout === undefined) delete process.env.PVGIS_TIMEOUT_MS;
+    else process.env.PVGIS_TIMEOUT_MS = previous.timeout;
+  }
+});
+
+test('PVGIS uses the requested roof orientation and tilt in distinct cached models', async () => {
+  const originalFetch = global.fetch;
+  const previous = {
+    retries: process.env.PVGIS_RETRIES,
+    delay: process.env.PVGIS_RETRY_DELAY_MS,
+    timeout: process.env.PVGIS_TIMEOUT_MS
+  };
+  const requestUrls = [];
+  process.env.PVGIS_RETRIES = '0';
+  process.env.PVGIS_RETRY_DELAY_MS = '0';
+  process.env.PVGIS_TIMEOUT_MS = '5000';
+  global.fetch = async (url) => {
+    requestUrls.push(new URL(url));
+    return new Response(JSON.stringify({
+      outputs: { totals: { fixed: { E_y: 5200 } }, monthly: { fixed: [] } }
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+
+  try {
+    const north = await getSolarPotential(-26.2041, 28.0473, 7, 180, 25);
+    const east = await getSolarPotential(-26.2041, 28.0473, 7, -90, 15);
+    assert.equal(requestUrls.length, 2);
+    assert.equal(requestUrls[0].searchParams.get('aspect'), '180');
+    assert.equal(requestUrls[0].searchParams.get('angle'), '25');
+    assert.equal(requestUrls[1].searchParams.get('aspect'), '-90');
+    assert.equal(requestUrls[1].searchParams.get('angle'), '15');
+    assert.equal(north.orientation, 180);
+    assert.equal(north.tilt, 25);
+    assert.equal(east.orientation, -90);
+    assert.equal(east.tilt, 15);
   } finally {
     global.fetch = originalFetch;
     if (previous.retries === undefined) delete process.env.PVGIS_RETRIES;

@@ -1,14 +1,14 @@
 const { cached } = require('./cache');
 const { fetchWithRetry } = require('./retry');
 
-async function getSolarPotential(latitude, longitude, peakPower = 1) {
-  const key = `pvgis:${latitude.toFixed(3)}:${longitude.toFixed(3)}:${peakPower}`;
+async function getSolarPotential(latitude, longitude, peakPower = 1, orientation = 180, tilt = 30) {
+  const key = `pvgis:${latitude.toFixed(3)}:${longitude.toFixed(3)}:${peakPower}:${orientation}:${tilt}`;
   return cached(key, 24 * 60 * 60 * 1000, async () => {
     const base = (process.env.PVGIS_BASE_URL || 'https://re.jrc.ec.europa.eu/api/v5_3').replace(/\/$/, '');
     const url = new URL(`${base}/PVcalc`);
     url.search = new URLSearchParams({
       lat: String(latitude), lon: String(longitude), peakpower: String(peakPower),
-      loss: '14', angle: '30', aspect: '0', outputformat: 'json'
+      loss: '14', angle: String(tilt), aspect: String(orientation), outputformat: 'json'
     }).toString();
     let response;
     try {
@@ -33,7 +33,15 @@ async function getSolarPotential(latitude, longitude, peakPower = 1) {
       throw error;
     }
     const data = await response.json();
-    return { source: 'European Commission Joint Research Centre PVGIS', dataType: 'modeled long-term solar potential', retrievedAt: new Date().toISOString(), peakPowerKw: peakPower, data };
+    return {
+      source: 'European Commission Joint Research Centre PVGIS',
+      dataType: 'modeled long-term solar potential',
+      retrievedAt: new Date().toISOString(),
+      peakPowerKw: peakPower,
+      orientation,
+      tilt,
+      data
+    };
   });
 }
 function timeoutSetting() {
