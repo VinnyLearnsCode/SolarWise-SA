@@ -10,9 +10,11 @@ const backButton = document.getElementById('back-to-country');
 const calculateLink = document.getElementById('calculate-area');
 const tariffCategory = document.getElementById('tariff-category');
 const tariffCategoryLabel = document.getElementById('tariff-category-label');
+const tariffPlan = document.getElementById('tariff-plan');
+const tariffPlanLabel = document.getElementById('tariff-plan-label');
 const layerDescriptions = {
   solar: 'Long-term modeled solar radiation on a horizontal surface, sampled at each area’s representative point.',
-  tariff: 'Active official municipal energy charges from verified tariff records. Province shading summarizes available municipality records only.',
+  tariff: 'Verified municipal energy charges. The map compares flat rates only; tiered schedules remain visible in area details and are never collapsed to a single rate.',
   savings: 'SolarWise modelled first-year bill savings using your bill, usage, tariff, system cost, and the same assumptions as the calculator.',
   payback: 'SolarWise modelled simple payback using PVGIS generation, your entered system cost, and the calculator’s stated financial assumptions.'
 };
@@ -90,6 +92,12 @@ layerSelect.addEventListener('change', () => {
   applyLayer();
 });
 tariffCategory.addEventListener('change', () => {
+  updateTariffPlanOptions();
+  refreshMap();
+  renderSelectedArea();
+  updateLegend();
+});
+tariffPlan.addEventListener('change', () => {
   refreshMap();
   renderSelectedArea();
   updateLegend();
@@ -309,12 +317,14 @@ async function applyLayer() {
   document.getElementById('map-layer-description').textContent = layerDescriptions[currentLayer];
   tariffCategoryLabel.hidden = currentLayer !== 'tariff' || tariffCategory.options.length === 0;
   tariffCategory.hidden = currentLayer !== 'tariff' || tariffCategory.options.length === 0;
+  tariffPlanLabel.hidden = currentLayer !== 'tariff' || tariffPlan.options.length === 0;
+  tariffPlan.hidden = currentLayer !== 'tariff' || tariffPlan.options.length === 0;
   if (currentLayer === 'tariff') {
     await loadTariffs();
     if (requestId !== layerRequestId) return;
     if (currentLevel === 'country') {
       if (tariffLoadError) mapStatus.textContent = `Data unavailable: ${tariffLoadError}`;
-      else mapStatus.textContent = `${tariffRecords.length} active, sourced tariff records available. Province shading shows the unweighted average for the selected category.`;
+      else mapStatus.textContent = `${tariffRecords.length} active, sourced tariff schedules available. Choose a specific plan to compare rates; schedules are not combined.`;
     } else {
       mapStatus.textContent = tariffLoadError
         ? `Data unavailable: ${tariffLoadError}`
@@ -455,10 +465,19 @@ function valueForFeature(feature, layer) {
   if (layer === 'tariff') {
     if (tariffLoadError || !tariffRecords.length) return null;
     if (feature.properties.boundaryType === 'ADM1') {
-      const records = tariffsInProvince(feature.properties.name);
+      const records = tariffsInProvince(feature.properties.name)
+        .filter((record) => record.energyChargePerKwh != null
+          && Number.isFinite(Number(record.energyChargePerKwh)));
+      const recordsPerMunicipality = new Map();
+      for (const record of tariffsInProvince(feature.properties.name)) {
+        const key = normalizeName(record.municipality.name);
+        recordsPerMunicipality.set(key, (recordsPerMunicipality.get(key) || 0) + 1);
+      }
+      if (!tariffPlan.value && [...recordsPerMunicipality.values()].some((count) => count > 1)) return null;
       return records.length ? records.reduce((sum, record) => sum + Number(record.energyChargePerKwh), 0) / records.length : null;
     }
-    return tariffFor(feature)?.energyChargePerKwh ?? null;
+    const rate = tariffFor(feature)?.energyChargePerKwh;
+    return rate == null ? null : Number(rate);
   }
   if (layer === 'solar') return solarValues.get(regionKey(feature))?.annualKwhM2 ?? null;
   const response = financialValues.get(regionKey(feature));
@@ -475,9 +494,9 @@ function updateLegend() {
     .find((item) => item.province === selectedProvince)?.collection.features || [];
   const values = features.map((feature) => valueForFeature(feature, currentLayer)).filter(Number.isFinite);
   if (currentLayer === 'tariff' && currentLevel === 'country' && values.length) {
-    const total = tariffRecords.filter((record) => categoryMatches(record)).length;
+    const total = tariffRecords.filter((record) => categoryMatches(record) && planMatches(record)).length;
     activePaletteRange = { min: Math.min(...values), max: Math.max(...values) };
-    legend.innerHTML = `<span class="map-legend-title">Unweighted mean among verified ${SolarFormat.escape(tariffCategory.value || 'available category')} records · R/kWh</span><div class="map-legend-gradient" style="background:linear-gradient(90deg,${palettes.tariff.join(',')})"></div><span class="map-legend-range"><span>${formatNumber(Math.min(...values), 2)}</span><span>${formatNumber(Math.max(...values), 2)}</span></span><span class="map-legend-no-data"><i></i>Data unavailable · ${total} municipal records</span>`;
+    legend.innerHTML = `<span class="map-legend-title">Unweighted mean of flat ${SolarFormat.escape(tariffPlan.selectedOptions[0]?.textContent || 'tariff')} rates · R/kWh</span><div class="map-legend-gradient" style="background:linear-gradient(90deg,${palettes.tariff.join(',')})"></div><span class="map-legend-range"><span>${formatNumber(Math.min(...values), 2)}</span><span>${formatNumber(Math.max(...values), 2)}</span></span><span class="map-legend-no-data"><i></i>Data unavailable · ${total} selected schedules</span>`;
     refreshMap();
     return;
   }
@@ -506,10 +525,13 @@ async function loadTariffs() {
     if (!Array.isArray(response.tariffs)) throw new Error('Tariff service returned an unexpected response.');
     tariffRecords = response.tariffs.filter(isVerifiedActiveTariff);
     const categories = [...new Set(tariffRecords.map((record) => record.customerCategory))].sort((a, b) => a.localeCompare(b));
-    tariffCategory.replaceChildren(...categories.map((category) => new Option(category, category)));
+    tariffCategory.replaceChildren(new Option('All categories', ''), ...categories.map((category) => new Option(category, category)));
+    updateTariffPlanOptions();
     if (categories.length) {
       tariffCategoryLabel.hidden = currentLayer !== 'tariff';
       tariffCategory.hidden = currentLayer !== 'tariff';
+      tariffPlanLabel.hidden = currentLayer !== 'tariff';
+      tariffPlan.hidden = currentLayer !== 'tariff';
     }
     tariffLoadError = categories.length ? null : 'No active, sourced tariff records are available yet. Publish approved municipal tariffs from the admin dashboard.';
     refreshMap();
@@ -526,8 +548,19 @@ async function loadTariffs() {
 }
 
 function isVerifiedActiveTariff(record) {
+  const hasFlatRate = Number.isFinite(Number(record?.energyChargePerKwh)) && record?.energyChargePerKwh != null;
+  const hasBlockSchedule = Array.isArray(record?.energyBlocks)
+    && record.energyBlocks.length > 0
+    && record.energyBlocks[record.energyBlocks.length - 1].upToKwh == null
+    && record.energyBlocks.every((block, index, blocks) => (
+      Number.isFinite(Number(block.ratePerKwh))
+      && Number(block.ratePerKwh) >= 0
+      && (index === blocks.length - 1
+        || (Number.isInteger(block.upToKwh) && block.upToKwh > 0
+          && (blocks[index + 1].upToKwh == null || block.upToKwh < blocks[index + 1].upToKwh)))
+    ));
   if (!record?.municipality?.name || !record.municipality.province?.name
-    || !record.customerCategory || !Number.isFinite(Number(record.energyChargePerKwh))
+    || !record.customerCategory || hasFlatRate === hasBlockSchedule
     || !Number.isFinite(new Date(record.lastVerifiedAt).getTime())
     || !Number.isFinite(new Date(record.effectiveFrom).getTime())) return false;
   try {
@@ -541,24 +574,48 @@ function isVerifiedActiveTariff(record) {
 function tariffsInProvince(province) {
   const latest = new Map();
   for (const record of tariffRecords) {
-    if (record.municipality.province.name !== province || !categoryMatches(record)) continue;
-    const name = normalizeName(record.municipality.name);
-    const current = latest.get(name);
-    if (!current || new Date(record.effectiveFrom) > new Date(current.effectiveFrom)) latest.set(name, record);
+    if (record.municipality.province.name !== province || !categoryMatches(record) || !planMatches(record)) continue;
+    const key = `${normalizeName(record.municipality.name)}|${planKey(record)}`;
+    const current = latest.get(key);
+    if (!current || new Date(record.effectiveFrom) > new Date(current.effectiveFrom)) latest.set(key, record);
   }
   return [...latest.values()];
 }
 
+function tariffsFor(feature) {
+  return tariffsInProvince(feature.properties.province)
+    .filter((record) => normalizeName(record.municipality.name) === normalizeName(feature.properties.name));
+}
+
 function tariffFor(feature) {
-  const province = feature.properties.province;
-  const name = normalizeName(feature.properties.name);
-  return tariffsInProvince(province).find((record) => normalizeName(record.municipality.name) === name) || null;
+  const records = tariffsFor(feature);
+  return records.length === 1 ? records[0] : null;
 }
 
 function categoryMatches(record) {
   return !tariffCategory.value || record.customerCategory === tariffCategory.value;
 }
 
+function planMatches(record) {
+  return !tariffPlan.value || planKey(record) === tariffPlan.value;
+}
+
+function planKey(record) {
+  return JSON.stringify([record.customerCategory, record.name]);
+}
+
+function updateTariffPlanOptions() {
+  const previous = tariffPlan.value;
+  const plans = [...new Map(tariffRecords.filter(categoryMatches)
+    .map((record) => [planKey(record), record])).entries()]
+    .sort((left, right) => left[1].name.localeCompare(right[1].name)
+      || left[1].customerCategory.localeCompare(right[1].customerCategory));
+  tariffPlan.replaceChildren(
+    new Option('All plans (no combined rate)', ''),
+    ...plans.map(([key, record]) => new Option(`${record.name} · ${record.customerCategory}`, key))
+  );
+  if (plans.some(([key]) => key === previous)) tariffPlan.value = previous;
+}
 async function selectMunicipalityFromSearch(location) {
   const province = provinceCollection.features.find((feature) => feature.properties.name === location.province);
   if (!province) return;
@@ -660,7 +717,7 @@ async function renderSelectedArea(boundaryError) {
   const typeLabel = selectedFeature.properties.boundaryType === 'ADM1' ? 'Province' : 'Local municipality';
   const key = regionKey(selectedFeature);
   const solar = solarValues.get(key);
-  const tariff = selectedFeature.properties.boundaryType === 'ADM3' ? tariffFor(selectedFeature) : null;
+  const areaTariffs = selectedFeature.properties.boundaryType === 'ADM3' ? tariffsFor(selectedFeature) : [];
   const provinceTariffs = selectedFeature.properties.boundaryType === 'ADM1'
     ? tariffsInProvince(selectedFeature.properties.name)
     : [];
@@ -674,16 +731,23 @@ async function renderSelectedArea(boundaryError) {
     details.push(`<div class="map-info-item"><b>Solar irradiation</b><span class="map-unavailable">${solarLoading ? 'Loading PVGIS model…' : 'Data unavailable'}</span><small>${SolarFormat.escape(layerErrors.get(`solar|${key}|`) || 'Select the area to request the PVGIS model at its representative point.')}</small></div>`);
   }
   if (selectedFeature.properties.boundaryType === 'ADM3') {
-    details.push(renderMunicipalityTariffInfo(tariff));
+    if (areaTariffs.length) details.push(...areaTariffs.map(renderMunicipalityTariffInfo));
+    else details.push(renderMunicipalityTariffInfo(null));
   } else {
     const totalMunicipalities = municipalityIndex
       ? municipalityIndex.filter((item) => item.province === selectedFeature.properties.name).length
       : null;
-    const coverage = totalMunicipalities ? `${provinceTariffs.length} of ${totalMunicipalities} municipalities` : `${provinceTariffs.length} municipality records`;
-    const average = provinceTariffs.length
-      ? `R${formatNumber(provinceTariffs.reduce((sum, record) => sum + Number(record.energyChargePerKwh), 0) / provinceTariffs.length, 2)}/kWh`
-      : 'Data unavailable';
-    details.push(`<div class="map-info-item"><b>Verified tariff coverage · ${SolarFormat.escape(tariffCategory.value || 'all categories')}</b><span>${SolarFormat.escape(average)}</span><small>${SolarFormat.escape(coverage)} with a matching active record${provinceTariffs.length ? ' · unweighted average, not a province-wide tariff' : ''}${tariffLoadError ? ` · ${SolarFormat.escape(tariffLoadError)}` : ''}</small></div>`);
+    const coveredMunicipalities = new Set(provinceTariffs.map((record) => normalizeName(record.municipality.name))).size;
+    const coverage = totalMunicipalities ? `${coveredMunicipalities} of ${totalMunicipalities} municipalities` : `${coveredMunicipalities} municipalities`;
+    const comparableTariffs = provinceTariffs.filter((record) => record.energyChargePerKwh != null
+      && Number.isFinite(Number(record.energyChargePerKwh)));
+    const hasPlanAmbiguity = !tariffPlan.value && new Set(provinceTariffs.map((record) => normalizeName(record.municipality.name))).size < provinceTariffs.length;
+    const average = hasPlanAmbiguity
+      ? 'Choose a plan to compare rates'
+      : comparableTariffs.length
+      ? `R${formatNumber(comparableTariffs.reduce((sum, record) => sum + Number(record.energyChargePerKwh), 0) / comparableTariffs.length, 2)}/kWh`
+      : provinceTariffs.length ? 'Tiered schedules available; no flat-rate comparison' : 'Data unavailable';
+    details.push(`<div class="map-info-item"><b>Verified tariff coverage · ${SolarFormat.escape(tariffCategory.value || 'all categories')}${tariffPlan.value ? ` · ${SolarFormat.escape(tariffPlan.value)}` : ''}</b><span>${SolarFormat.escape(average)}</span><small>${SolarFormat.escape(coverage)} with a matching active record${comparableTariffs.length && !hasPlanAmbiguity ? ` · unweighted average of ${comparableTariffs.length} flat-rate records, not a province-wide tariff` : ''}${provinceTariffs.some((record) => record.energyBlocks?.length) ? ' · tiered rates are not combined into a flat estimate' : ''}${tariffLoadError ? ` · ${SolarFormat.escape(tariffLoadError)}` : ''}</small></div>`);
   }
   if (currentLayer === 'savings' || currentLayer === 'payback') {
     const missing = missingFinancialInputs();
@@ -696,9 +760,13 @@ async function renderSelectedArea(boundaryError) {
       details.push(`<div class="map-info-item"><b>${SolarFormat.escape(layerLabel(currentLayer))}</b><span class="map-unavailable">${missing.length ? 'Data unavailable' : 'Loading estimate…'}</span><small>${SolarFormat.escape(missing.length ? `Enter ${missing.join(', ')} in the assumptions panel.` : 'The solar calculation is in progress.')}</small></div>`);
     }
   }
-  const tariffActions = tariff
-    ? `<div class="map-tariff-actions"><button type="button" class="use-map-tariff" data-tariff="${SolarFormat.escape(tariff.id)}">Use verified ${SolarFormat.escape(tariff.customerCategory)} tariff in estimates</button></div>`
-    : '';
+  const flatTariffs = areaTariffs.filter((record) => record.energyChargePerKwh != null);
+  const hasTieredTariffs = areaTariffs.some((record) => record.energyBlocks?.length);
+  const tariffActions = flatTariffs.length
+    ? `<div class="map-tariff-actions">${flatTariffs.map((record) => `<button type="button" class="use-map-tariff" data-tariff="${SolarFormat.escape(record.id)}">Use ${SolarFormat.escape(record.name)} in estimates</button>`).join('')}</div>`
+    : hasTieredTariffs
+      ? '<p class="map-helper">Select a specific energy rate from the schedule and enter it manually for calculator estimates; the block schedule is not reduced to a single rate.</p>'
+      : '';
   const errorHtml = boundaryError ? `<p class="form-error">${SolarFormat.escape(boundaryError)}</p>` : '';
   selectedArea.innerHTML = `${errorHtml}<h2 id="selected-area-heading">${SolarFormat.escape(selectedFeature.properties.name)}</h2><p class="map-source-tag">${SolarFormat.escape(typeLabel)}</p><div class="map-info-list">${details.join('')}</div>${tariffActions}`;
   bindTariffButtons(selectedArea);
@@ -711,19 +779,31 @@ function renderMunicipalityTariffInfo(tariff) {
     return `<div class="map-info-item"><b>Municipal electricity tariff</b><span class="map-unavailable">Data unavailable</span><small>${SolarFormat.escape(tariffLoadError)}</small></div>`;
   }
   if (!tariff) {
-    return `<div class="map-info-item"><b>Municipal electricity tariff · ${SolarFormat.escape(tariffCategory.value || 'selected category')}</b><span class="map-unavailable">Data unavailable</span><small>No verified municipal tariff has been published for this municipality and customer category yet. Add an approved tariff record in the admin dashboard to populate this field.</small></div>`;
+    return `<div class="map-info-item"><b>Municipal electricity tariffs · ${SolarFormat.escape(tariffCategory.value || 'all categories')}</b><span class="map-unavailable">Data unavailable</span><small>No verified active tariff schedule has been published for this municipality and customer category yet. Add an approved tariff record in the admin dashboard to populate this field.</small></div>`;
   }
-  return `<div class="map-info-item"><b>Official tariff · ${SolarFormat.escape(tariff.customerCategory)}</b><span>R${formatNumber(Number(tariff.energyChargePerKwh), 4)} per kWh</span><small>${SolarFormat.escape(tariff.name)} · effective ${formatDate(tariff.effectiveFrom)} · last verified ${formatDate(tariff.lastVerifiedAt)}${isOldTariff(tariff) ? ' · check for updates' : ''}<br>Source: <a href="${SolarFormat.escape(tariff.sourceUrl)}" target="_blank" rel="noopener noreferrer">official tariff publication</a></small></div>`;
+  const energyDisplay = Array.isArray(tariff.energyBlocks) && tariff.energyBlocks.length
+    ? `<span>Inclining-block schedule</span><small>${tariff.energyBlocks.map((block, index) => `Block ${index + 1}: ${block.upToKwh == null ? 'above previous limit' : `up to ${SolarFormat.number(block.upToKwh)} kWh`} at R${formatNumber(Number(block.ratePerKwh), 4)}/kWh`).join('<br>')}</small>`
+    : `<span>${tariff.energyChargePerKwh == null ? 'Energy rate unavailable' : `R${formatNumber(Number(tariff.energyChargePerKwh), 4)} per kWh`}</span>`;
+  const fixedCharge = tariff.fixedMonthlyCharge == null
+    ? 'Fixed monthly charge not specified'
+    : `R${formatNumber(Number(tariff.fixedMonthlyCharge), 2)} monthly fixed charge`;
+  const fixedChargeDetails = Array.isArray(tariff.fixedCharges)
+    ? tariff.fixedCharges.map((charge) => `${SolarFormat.escape(charge.name)}: R${formatNumber(Number(charge.amount), 2)} ${charge.frequency}`).join('<br>')
+    : '';
+  const vatStatus = tariff.pricesIncludeVat == null ? 'VAT treatment not specified' : `Prices ${tariff.pricesIncludeVat ? 'include' : 'exclude'} VAT`;
+  return `<div class="map-info-item"><b>Official tariff · ${SolarFormat.escape(tariff.customerCategory)}</b>${energyDisplay}<small>${SolarFormat.escape(fixedCharge)}${fixedChargeDetails ? `<br>${fixedChargeDetails}` : ''} · ${SolarFormat.escape(vatStatus)}<br>${SolarFormat.escape(tariff.name)} · effective ${formatDate(tariff.effectiveFrom)} · last verified ${formatDate(tariff.lastVerifiedAt)}${isOldTariff(tariff) ? ' · check for updates' : ''}<br>Source: <a href="${SolarFormat.escape(tariff.sourceUrl)}" target="_blank" rel="noopener noreferrer">official tariff publication</a></small></div>`;
 }
 
 function bindTariffButtons(container) {
   container.querySelectorAll('.use-map-tariff').forEach((button) => {
     button.addEventListener('click', () => {
       const record = tariffRecords.find((item) => item.id === button.dataset.tariff);
-      if (!record) return;
+      if (!record || record.energyChargePerKwh == null) return;
       document.getElementById('map-tariff').value = Number(record.energyChargePerKwh);
       const categoryIndex = [...tariffCategory.options].findIndex((option) => option.value === record.customerCategory);
       if (categoryIndex >= 0) tariffCategory.selectedIndex = categoryIndex;
+      updateTariffPlanOptions();
+      tariffPlan.value = planKey(record);
       financialValues.clear();
       updateCalculateLink();
       refreshMap();

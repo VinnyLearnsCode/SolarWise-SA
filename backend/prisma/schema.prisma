@@ -41,9 +41,12 @@ model ElectricityTariff {
   customerCategory   String
   effectiveFrom      DateTime
   effectiveTo        DateTime?
-  fixedMonthlyCharge Decimal      @db.Decimal(12, 2)
-  energyChargePerKwh Decimal      @db.Decimal(12, 4)
+  fixedMonthlyCharge Decimal?     @db.Decimal(12, 2)
+  fixedCharges       Json?
+  energyChargePerKwh Decimal?     @db.Decimal(12, 4)
+  energyBlocks       Json?
   timeOfUseRates     Json?
+  pricesIncludeVat   Boolean?
   feedInRatePerKwh   Decimal?     @db.Decimal(12, 4)
   sourceUrl          String
   lastVerifiedAt     DateTime

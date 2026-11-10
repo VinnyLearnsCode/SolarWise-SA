@@ -96,11 +96,18 @@ async function createTariff(req, res) {
   const input = z.object({
     municipalityId: z.string().min(1), name: z.string().trim().min(1).max(120),
     customerCategory: z.string().trim().min(1).max(80), effectiveFrom: z.coerce.date(),
-    fixedMonthlyCharge: z.number().min(0), energyChargePerKwh: z.number().min(0),
+    fixedMonthlyCharge: z.number().min(0).nullable().optional(),
+    fixedCharges: fixedChargesSchema.optional(),
+    energyChargePerKwh: z.number().min(0).nullable().optional(),
+    energyBlocks: energyBlocksSchema.optional(),
+    pricesIncludeVat: z.boolean().nullable().optional(),
     timeOfUseRates: z.record(z.string(), z.unknown()).optional(),
     feedInRatePerKwh: z.number().min(0).optional(),
     sourceUrl: z.string().url().max(500).refine((value) => new URL(value).protocol === 'https:', 'Source URL must use HTTPS.'),
     lastVerifiedAt: z.coerce.date()
+  }).refine((value) => Boolean(value.energyBlocks) !== Number.isFinite(value.energyChargePerKwh), {
+    message: 'Provide either a flat energy rate or an inclining-block schedule, but not both.',
+    path: ['energyBlocks']
   }).parse(req.body);
   const tariff = await getPrisma().electricityTariff.create({ data: input });
   res.status(201).json({ tariff });
@@ -128,9 +135,12 @@ module.exports = {
 const tariffCsvColumns = [
   'municipality', 'province', 'name', 'customerCategory', 'effectiveFrom',
   'lastVerifiedAt', 'fixedMonthlyCharge', 'energyChargePerKwh', 'sourceUrl',
-  'feedInRatePerKwh', 'timeOfUseRates'
+  'feedInRatePerKwh', 'timeOfUseRates', 'energyBlocks', 'pricesIncludeVat', 'fixedCharges'
 ];
-const requiredTariffCsvColumns = tariffCsvColumns.slice(0, 9);
+const requiredTariffCsvColumns = [
+  'municipality', 'province', 'name', 'customerCategory', 'effectiveFrom',
+  'lastVerifiedAt', 'sourceUrl'
+];
 
 function parseTariffCsv(csv) {
   const rows = parseCsvRows(csv);
@@ -160,11 +170,14 @@ function parseTariffCsv(csv) {
       customerCategory: values.customerCategory,
       effectiveFrom: parseCsvDate(values.effectiveFrom, 'effectiveFrom', line),
       lastVerifiedAt: parseCsvDate(values.lastVerifiedAt, 'lastVerifiedAt', line),
-      fixedMonthlyCharge: parseCsvNumber(values.fixedMonthlyCharge, 'fixedMonthlyCharge', line),
-      energyChargePerKwh: parseCsvNumber(values.energyChargePerKwh, 'energyChargePerKwh', line),
       sourceUrl: values.sourceUrl,
+      ...(values.fixedMonthlyCharge ? { fixedMonthlyCharge: parseCsvNumber(values.fixedMonthlyCharge, 'fixedMonthlyCharge', line) } : {}),
+      ...(values.energyChargePerKwh ? { energyChargePerKwh: parseCsvNumber(values.energyChargePerKwh, 'energyChargePerKwh', line) } : {}),
       ...(values.feedInRatePerKwh ? { feedInRatePerKwh: parseCsvNumber(values.feedInRatePerKwh, 'feedInRatePerKwh', line) } : {}),
-      ...(values.timeOfUseRates ? { timeOfUseRates: parseTimeOfUseRates(values.timeOfUseRates, line) } : {})
+      ...(values.timeOfUseRates ? { timeOfUseRates: parseTimeOfUseRates(values.timeOfUseRates, line) } : {}),
+      ...(values.energyBlocks ? { energyBlocks: parseEnergyBlocks(values.energyBlocks, line) } : {}),
+      ...(values.pricesIncludeVat ? { pricesIncludeVat: parseVatStatus(values.pricesIncludeVat, line) } : {}),
+      ...(values.fixedCharges ? { fixedCharges: parseFixedCharges(values.fixedCharges, line) } : {})
     };
     const result = z.object({
       municipality: z.string().trim().min(2).max(120),
@@ -173,11 +186,17 @@ function parseTariffCsv(csv) {
       customerCategory: z.string().trim().min(1).max(80),
       effectiveFrom: z.date(),
       lastVerifiedAt: z.date(),
-      fixedMonthlyCharge: z.number().min(0).max(100000000),
-      energyChargePerKwh: z.number().min(0).max(10000),
+      fixedMonthlyCharge: z.number().min(0).max(100000000).optional(),
+      fixedCharges: fixedChargesSchema.optional(),
+      energyChargePerKwh: z.number().min(0).max(10000).optional(),
+      energyBlocks: energyBlocksSchema.optional(),
+      pricesIncludeVat: z.boolean().optional(),
       sourceUrl: z.string().url().max(500).refine((value) => new URL(value).protocol === 'https:', 'Source URL must use HTTPS.'),
       feedInRatePerKwh: z.number().min(0).max(10000).optional(),
       timeOfUseRates: z.record(z.string(), z.unknown()).optional()
+    }).refine((value) => Boolean(value.energyBlocks) !== Number.isFinite(value.energyChargePerKwh), {
+      message: 'provide either energyChargePerKwh or energyBlocks, but not both',
+      path: ['energyBlocks']
     }).safeParse(rowData);
     if (!result.success) {
       const issue = result.error.issues[0];
@@ -187,7 +206,7 @@ function parseTariffCsv(csv) {
     if (records.length > 500) throw tariffCsvError('A single CSV import cannot exceed 500 tariff records.');
   }
   if (!records.length) {
-    throw tariffCsvError('No tariff records found. The worksheet lists municipality names only; fill in at least one tariff row with its name, customer category, effective date, verification date, fixed charge, energy rate, and official source URL.');
+    throw tariffCsvError('No tariff records found. The worksheet lists municipality names only; fill in at least one tariff row with its name, customer category, effective date, verification date, either a flat energy rate or energy-block schedule, and official source URL.');
   }
 
   const seen = new Set();
@@ -262,7 +281,8 @@ async function importTariffCsv(csv, database = getPrisma()) {
       select: {
         municipalityId: true, name: true, customerCategory: true, effectiveFrom: true,
         lastVerifiedAt: true, fixedMonthlyCharge: true, energyChargePerKwh: true,
-        sourceUrl: true, feedInRatePerKwh: true, timeOfUseRates: true
+          energyBlocks: true, pricesIncludeVat: true, fixedCharges: true,
+          sourceUrl: true, feedInRatePerKwh: true, timeOfUseRates: true
       }
     });
     const municipalitiesById = new Map(importedMunicipalities.map((municipality) => [
@@ -298,7 +318,10 @@ async function importTariffCsv(csv, database = getPrisma()) {
           effectiveFrom: record.effectiveFrom,
           lastVerifiedAt: record.lastVerifiedAt,
           fixedMonthlyCharge: record.fixedMonthlyCharge,
+          fixedCharges: record.fixedCharges,
           energyChargePerKwh: record.energyChargePerKwh,
+          energyBlocks: record.energyBlocks,
+          pricesIncludeVat: record.pricesIncludeVat,
           sourceUrl: record.sourceUrl,
           ...(record.feedInRatePerKwh === undefined ? {} : { feedInRatePerKwh: record.feedInRatePerKwh }),
           ...(record.timeOfUseRates === undefined ? {} : { timeOfUseRates: record.timeOfUseRates })
@@ -393,6 +416,57 @@ function parseTimeOfUseRates(value, line) {
   return rates;
 }
 
+const energyBlocksSchema = z.array(z.object({
+  upToKwh: z.number().int().positive().nullable(),
+  ratePerKwh: z.number().min(0).max(10000)
+})).min(1).refine((blocks) => {
+  if (blocks[blocks.length - 1].upToKwh !== null) return false;
+  return blocks.slice(0, -1).every((block, index) => (
+    block.upToKwh !== null
+    && (blocks[index + 1].upToKwh === null || block.upToKwh < blocks[index + 1].upToKwh)
+  ));
+}, 'must have strictly increasing consumption limits and an unlimited final block');
+
+const fixedChargesSchema = z.array(z.object({
+  name: z.string().trim().min(1).max(120),
+  amount: z.number().min(0).max(100000000),
+  frequency: z.enum(['perMonth', 'perDay', 'once'])
+})).min(1);
+
+function parseFixedCharges(value, line) {
+  let charges;
+  try {
+    charges = JSON.parse(value);
+  } catch {
+    throw tariffCsvError(`Row ${line}: fixedCharges must contain valid JSON.`);
+  }
+  const result = fixedChargesSchema.safeParse(charges);
+  if (!result.success) {
+    throw tariffCsvError(`Row ${line}: fixedCharges ${result.error.issues[0].message}.`);
+  }
+  return result.data;
+}
+
+function parseEnergyBlocks(value, line) {
+  let blocks;
+  try {
+    blocks = JSON.parse(value);
+  } catch {
+    throw tariffCsvError(`Row ${line}: energyBlocks must contain valid JSON.`);
+  }
+  const result = energyBlocksSchema.safeParse(blocks);
+  if (!result.success) {
+    throw tariffCsvError(`Row ${line}: energyBlocks ${result.error.issues[0].message}.`);
+  }
+  return result.data;
+}
+
+function parseVatStatus(value, line) {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw tariffCsvError(`Row ${line}: pricesIncludeVat must be true or false.`);
+}
+
 function tariffImportKey(municipality, province, name, category, effectiveFrom) {
   return [
     municipalityKey(municipality, province),
@@ -411,12 +485,15 @@ function normalizeImportName(value) {
 }
 
 function sameTariffValues(existing, record) {
-  return Number(existing.fixedMonthlyCharge) === record.fixedMonthlyCharge
-    && Number(existing.energyChargePerKwh) === record.energyChargePerKwh
+  return (existing.fixedMonthlyCharge == null ? null : Number(existing.fixedMonthlyCharge)) === (record.fixedMonthlyCharge ?? null)
+    && (existing.energyChargePerKwh == null ? null : Number(existing.energyChargePerKwh)) === (record.energyChargePerKwh ?? null)
     && (existing.feedInRatePerKwh == null ? null : Number(existing.feedInRatePerKwh)) === (record.feedInRatePerKwh ?? null)
     && new Date(existing.lastVerifiedAt).toISOString().slice(0, 10) === record.lastVerifiedAt.toISOString().slice(0, 10)
     && existing.sourceUrl === record.sourceUrl
-    && JSON.stringify(sortJson(existing.timeOfUseRates ?? null)) === JSON.stringify(sortJson(record.timeOfUseRates ?? null));
+    && (existing.pricesIncludeVat ?? null) === (record.pricesIncludeVat ?? null)
+    && JSON.stringify(sortJson(existing.timeOfUseRates ?? null)) === JSON.stringify(sortJson(record.timeOfUseRates ?? null))
+    && JSON.stringify(sortJson(existing.fixedCharges ?? null)) === JSON.stringify(sortJson(record.fixedCharges ?? null))
+    && JSON.stringify(sortJson(existing.energyBlocks ?? null)) === JSON.stringify(sortJson(record.energyBlocks ?? null));
 }
 
 function sortJson(value) {

@@ -5,8 +5,8 @@ const path = require('node:path');
 const { parseTariffCsv, importTariffCsv } = require('../src/controllers/admin');
 const app = require('../app');
 
-const header = 'municipality,province,name,customerCategory,effectiveFrom,lastVerifiedAt,fixedMonthlyCharge,energyChargePerKwh,sourceUrl,feedInRatePerKwh,timeOfUseRates';
-const validRow = '"City of Johannesburg",Gauteng,"Residential, standard",Residential,2026-07-01,2026-11-10,250,3.4567,https://www.example.gov.za/tariffs,,';
+const header = 'municipality,province,name,customerCategory,effectiveFrom,lastVerifiedAt,fixedMonthlyCharge,energyChargePerKwh,sourceUrl,feedInRatePerKwh,timeOfUseRates,energyBlocks,pricesIncludeVat,fixedCharges';
+const validRow = '"City of Johannesburg",Gauteng,"Residential, standard",Residential,2026-07-01,2026-11-10,250,3.4567,https://www.example.gov.za/tariffs,,,,,';
 
 test('tariff worksheet includes every map municipality without prefilled rates', () => {
   const template = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'data', 'tariff-import-template.csv'), 'utf8');
@@ -14,7 +14,32 @@ test('tariff worksheet includes every map municipality without prefilled rates',
   assert.equal(rows.length, 214);
   assert.equal(rows[0], header);
   assert.ok(rows.some((row) => row.startsWith('City of Johannesburg,Gauteng,')));
-  assert.ok(rows.every((row, index) => index === 0 || row.endsWith(',,,,,,,,,') || row.split(',').length === 11));
+  assert.ok(rows.every((row, index) => index === 0 || row.split(',').length === 14));
+});
+
+test('verified Johannesburg 2026/27 tariff CSV parses with both sourced prepaid schedules', () => {
+  const tariffCsv = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'frontend', 'data', 'verified-metro-tariffs-2026-27-partial.csv'),
+    'utf8'
+  );
+  const records = parseTariffCsv(tariffCsv);
+  assert.equal(records.length, 2);
+  assert.deepEqual(records.map((record) => record.name), [
+    'Residential Prepaid Low (Indigent)',
+    'Residential Prepaid High'
+  ]);
+  assert.deepEqual(records[0].energyBlocks, [
+    { upToKwh: 350, ratePerKwh: 2.7237 },
+    { upToKwh: 500, ratePerKwh: 3.3318 },
+    { upToKwh: null, ratePerKwh: 4.1306 }
+  ]);
+  assert.deepEqual(records[1].fixedCharges, [
+    { name: 'Basic charge', amount: 210, frequency: 'perMonth' },
+    { name: 'Service charge', amount: 70, frequency: 'perMonth' },
+    { name: 'Capacity charge', amount: 140, frequency: 'perMonth' }
+  ]);
+  assert.equal(records[0].pricesIncludeVat, undefined);
+  assert.ok(records.every((record) => record.sourceUrl.startsWith('https://joburg.org.za/')));
 });
 
 test('tariff CSV parser supports quoted commas and optional values', () => {
@@ -27,15 +52,38 @@ test('tariff CSV parser supports quoted commas and optional values', () => {
 });
 
 test('tariff CSV parser ignores untouched municipality worksheet rows', () => {
-  const blankRow = ['Abaqulusi', 'KwaZulu-Natal', ...Array(9).fill('')].join(',');
+  const blankRow = ['Abaqulusi', 'KwaZulu-Natal', ...Array(12).fill('')].join(',');
   const records = parseTariffCsv(`${header}\n${blankRow}\n${validRow}`);
   assert.equal(records.length, 1);
   assert.equal(records[0].sourceLine, 3);
 });
 
 test('tariff CSV parser explains that the blank municipality worksheet needs tariff details', () => {
-  const blankRow = ['Abaqulusi', 'KwaZulu-Natal', ...Array(9).fill('')].join(',');
+  const blankRow = ['Abaqulusi', 'KwaZulu-Natal', ...Array(12).fill('')].join(',');
   assert.throws(() => parseTariffCsv(`${header}\n${blankRow}`), /lists municipality names only; fill in at least one tariff row/);
+});
+
+test('tariff CSV parser validates an inclining-block schedule and VAT status', () => {
+  const row = '"City of Johannesburg",Gauteng,"Residential, inclining block",Residential,2026-07-01,2026-11-10,250,,https://www.example.gov.za/tariffs,,,"[{""upToKwh"":350,""ratePerKwh"":2.5},{""upToKwh"":null,""ratePerKwh"":3.1}]",true,"[{""name"":""Service charge"",""amount"":70,""frequency"":""perMonth""}]"';
+  const [record] = parseTariffCsv(`${header}\n${row}`);
+  assert.equal(record.energyChargePerKwh, undefined);
+  assert.deepEqual(record.energyBlocks, [
+    { upToKwh: 350, ratePerKwh: 2.5 },
+    { upToKwh: null, ratePerKwh: 3.1 }
+  ]);
+  assert.equal(record.pricesIncludeVat, true);
+  assert.deepEqual(record.fixedCharges, [
+    { name: 'Service charge', amount: 70, frequency: 'perMonth' }
+  ]);
+});
+
+test('tariff CSV parser rejects incomplete or ambiguous energy schedules', () => {
+  const noRate = validRow.replace('3.4567', '');
+  const both = '"City of Johannesburg",Gauteng,"Residential, both",Residential,2026-07-01,2026-11-10,250,3.4567,https://www.example.gov.za/tariffs,,,"[{""upToKwh"":null,""ratePerKwh"":3.1}]",true,';
+  const invalidBlocks = '"City of Johannesburg",Gauteng,"Residential, invalid blocks",Residential,2026-07-01,2026-11-10,250,,https://www.example.gov.za/tariffs,,,"[{""upToKwh"":300,""ratePerKwh"":3.1}]",true,';
+  assert.throws(() => parseTariffCsv(`${header}\n${noRate}`), /either energyChargePerKwh or energyBlocks/);
+  assert.throws(() => parseTariffCsv(`${header}\n${both}`), /either energyChargePerKwh or energyBlocks/);
+  assert.throws(() => parseTariffCsv(`${header}\n${invalidBlocks}`), /unlimited final block/);
 });
 
 test('tariff CSV parser rejects missing headers, malformed dates, and insecure sources', () => {

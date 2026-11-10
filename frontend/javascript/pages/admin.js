@@ -65,11 +65,14 @@ async function loadOverview(token, notice = '') {
           <div class="field-grid">
             <label>Effective from<input name="effectiveFrom" type="date" value="${new Date().toISOString().slice(0, 10)}" required></label>
             <label>Last verified<input name="lastVerifiedAt" type="date" value="${new Date().toISOString().slice(0, 10)}" required></label>
-            <label>Fixed monthly charge (R)<input name="fixedMonthlyCharge" type="number" min="0" step="0.01" value="0" required></label>
-            <label>Energy charge (R/kWh)<input name="energyChargePerKwh" type="number" min="0" step="0.0001" required></label>
+            <label>Fixed monthly charge (R) <span class="hint">optional; leave blank if not published</span><input name="fixedMonthlyCharge" type="number" min="0" step="0.01"></label>
+            <label>Flat energy charge (R/kWh) <span class="hint">use this or enter energy blocks below</span><input name="energyChargePerKwh" type="number" min="0" step="0.0001"></label>
             <label>Feed-in rate (R/kWh)<input name="feedInRatePerKwh" type="number" min="0" step="0.0001"></label>
           </div>
+          <label>Fixed charge components <span class="hint">optional JSON array; retain separate published components, e.g. [{"name":"Service charge","amount":70,"frequency":"perMonth"}]</span><textarea name="fixedCharges" rows="2"></textarea></label>
+          <label>Inclining-block energy schedule <span class="hint">optional JSON array; use increasing usage limits and null for the final unlimited block, e.g. [{"upToKwh":350,"ratePerKwh":2.5},{"upToKwh":null,"ratePerKwh":3.1}]</span><textarea name="energyBlocks" rows="3"></textarea></label>
           <label>Time-of-use rates <span class="hint">optional JSON object, e.g. {"peak":5.2,"offPeak":1.8}</span><textarea name="timeOfUseRates" rows="2"></textarea></label>
+          <label>VAT treatment<select name="pricesIncludeVat"><option value="">Not stated</option><option value="true">Prices include VAT</option><option value="false">Prices exclude VAT</option></select></label>
           <label>Source URL<input name="sourceUrl" type="url" required maxlength="500"></label>
           <button class="button primary" type="submit" ${municipalityData.municipalities.length ? '' : 'disabled'}>Publish tariff</button>
         </form>
@@ -87,7 +90,7 @@ async function loadOverview(token, notice = '') {
       <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Municipality</th><th>Tariff</th><th>Category</th><th>Charges (R)</th><th>Effective</th><th>Source / verified</th><th>Action</th></tr></thead><tbody>${tariffData.tariffs.map((tariff) => `
         <tr><td>${SolarFormat.escape(tariff.municipality.name)} · ${SolarFormat.escape(tariff.municipality.province.name)}</td>
         <td>${SolarFormat.escape(tariff.name)}</td><td>${SolarFormat.escape(tariff.customerCategory)}</td>
-        <td>${SolarFormat.number(Number(tariff.fixedMonthlyCharge), 2)} / month<br>${SolarFormat.number(Number(tariff.energyChargePerKwh), 4)} / kWh</td>
+        <td>${tariff.fixedMonthlyCharge == null ? 'Fixed charge not specified' : `${SolarFormat.number(Number(tariff.fixedMonthlyCharge), 2)} / month`}<br>${tariff.fixedCharges?.length ? `${tariff.fixedCharges.length} fixed-charge components` : ''}<br>${tariff.energyBlocks?.length ? `Tiered schedule · ${tariff.energyBlocks.length} blocks` : tariff.energyChargePerKwh == null ? 'Energy rate unavailable' : `${SolarFormat.number(Number(tariff.energyChargePerKwh), 4)} / kWh`}<br>${tariff.pricesIncludeVat == null ? 'VAT not stated' : `VAT ${tariff.pricesIncludeVat ? 'included' : 'excluded'}`}</td>
         <td>${new Date(tariff.effectiveFrom).toLocaleDateString('en-ZA')} – ${tariff.effectiveTo ? new Date(tariff.effectiveTo).toLocaleDateString('en-ZA') : 'open'}</td>
         <td><a href="${SolarFormat.escape(tariff.sourceUrl)}" target="_blank" rel="noreferrer">Source ↗</a><br>Verified ${new Date(tariff.lastVerifiedAt).toLocaleDateString('en-ZA')}</td>
         <td>${tariff.effectiveTo ? 'Historical' : `<form class="close-tariff-form" data-id="${SolarFormat.escape(tariff.id)}"><input name="effectiveTo" aria-label="End date for ${SolarFormat.escape(tariff.name)}" type="date" required><button class="button secondary" type="submit">End tariff</button></form>`}</td></tr>`).join('') || '<tr><td colspan="7">No tariff records yet. Add a verified source above.</td></tr>'}</tbody></table></div>
@@ -143,17 +146,25 @@ async function loadOverview(token, notice = '') {
       const data = Object.fromEntries(new FormData(event.currentTarget));
       try {
         const timeOfUseRates = data.timeOfUseRates.trim() ? JSON.parse(data.timeOfUseRates) : undefined;
+        const energyBlocks = data.energyBlocks.trim() ? JSON.parse(data.energyBlocks) : undefined;
+        const fixedCharges = data.fixedCharges.trim() ? JSON.parse(data.fixedCharges) : undefined;
+        const baseData = { ...data };
+        ['fixedMonthlyCharge', 'energyChargePerKwh', 'feedInRatePerKwh', 'timeOfUseRates', 'energyBlocks', 'pricesIncludeVat', 'fixedCharges']
+          .forEach((field) => delete baseData[field]);
         const payload = {
-          ...data,
-          fixedMonthlyCharge: Number(data.fixedMonthlyCharge),
-          energyChargePerKwh: Number(data.energyChargePerKwh),
+          ...baseData,
+          ...(data.fixedMonthlyCharge ? { fixedMonthlyCharge: Number(data.fixedMonthlyCharge) } : {}),
+          ...(data.energyChargePerKwh ? { energyChargePerKwh: Number(data.energyChargePerKwh) } : {}),
           ...(data.feedInRatePerKwh ? { feedInRatePerKwh: Number(data.feedInRatePerKwh) } : {}),
-          ...(timeOfUseRates === undefined ? {} : { timeOfUseRates })
+          ...(timeOfUseRates === undefined ? {} : { timeOfUseRates }),
+          ...(energyBlocks === undefined ? {} : { energyBlocks }),
+          ...(fixedCharges === undefined ? {} : { fixedCharges }),
+          ...(data.pricesIncludeVat ? { pricesIncludeVat: data.pricesIncludeVat === 'true' } : {})
         };
         await mutateAdmin(token, () => adminPost(token, '/admin/tariffs', payload));
       } catch (error) {
         section.querySelector('#admin-message').textContent = error instanceof SyntaxError
-          ? 'Time-of-use rates must be valid JSON.'
+          ? 'Time-of-use rates, fixed charges, and energy blocks must be valid JSON.'
           : error.message;
       }
     });
