@@ -41,10 +41,6 @@
       })[character]);
     }
   };
-  const savedTheme = localStorage.getItem('solarwise-theme');
-  const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  document.documentElement.dataset.theme = savedTheme || (systemDark ? 'dark' : 'light');
-
   document.querySelectorAll('.theme-toggle').forEach((button) => {
     button.addEventListener('click', () => {
       const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';

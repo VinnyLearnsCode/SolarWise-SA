@@ -99,10 +99,24 @@ test('health endpoint responds without a database connection', async (context) =
     assert.doesNotMatch(html, /<script[^>]+src="https:\/\/www\.googletagmanager\.com/, `${page} must not load GTM directly`);
     assert.doesNotMatch(html, /privacy-controls|privacy-settings-panel|data-gtm-container|GTM-PQRTDNDG/, `${page} must not expose disabled analytics UI or tags`);
     assert.match(html, /<main\b/, `${page} should have a main landmark`);
+    assert.ok(
+      html.indexOf('javascript/services/theme.js') < html.indexOf('<link rel="stylesheet"'),
+      `${page} should set its theme before stylesheets can paint`
+    );
     if (page === 'planner.html') {
       assert.match(html, /id="monthly-bill" type="number" min="1" step="any"/, 'monthly bill should accept arbitrary positive amounts');
     }
   }
+  for (const page of ['404.html', 'dashboard.html']) {
+    const response = await fetch(`${base}/html/${page}`);
+    const html = await response.text();
+    assert.ok(
+      html.indexOf('javascript/services/theme.js') < html.indexOf('<link rel="stylesheet"'),
+      `${page} should set its theme before stylesheets can paint`
+    );
+  }
+  const themeScript = await fetch(`${base}/javascript/services/theme.js`);
+  assert.equal(themeScript.status, 200);
   const dashboard = await fetch(`${base}/html/dashboard.html`);
   const dashboardHtml = await dashboard.text();
   assert.match(dashboardHtml, /<meta name="robots" content="noindex, nofollow">/);
