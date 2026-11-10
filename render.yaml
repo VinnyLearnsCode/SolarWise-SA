@@ -19,7 +19,7 @@ services:
         generateValue: true
       - key: ADMIN_EMAIL
         value: abutvincent23@gmail.com
-      - key: ADMIN_PASSWORD
+      - key: Vinny@078
         sync: false
       - key: FRONTEND_ORIGIN
         value: https://solarwise-sa-vinny-preview.onrender.com

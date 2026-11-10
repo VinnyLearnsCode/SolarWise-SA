@@ -32,6 +32,7 @@ app.use(helmet({
   }
 }));
 app.use(cors({ origin: allowedOrigin }));
+app.use('/api/admin/tariffs/import', express.json({ limit: '256kb' }));
 app.use(express.json({ limit: '32kb' }));
 app.use('/api/admin/login', rateLimit({
   windowMs: 15 * 60 * 1000,

@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const { getPrisma } = require('../utils/prisma');
+const municipalityIndex = require('../../../frontend/data/solar-map/municipality-index.json');
 
 async function login(req, res) {
   const input = z.object({ email: z.string().trim().email().max(254), password: z.string().min(1).max(200) }).parse(req.body);
@@ -105,6 +106,11 @@ async function createTariff(req, res) {
   res.status(201).json({ tariff });
 }
 
+async function importTariffs(req, res) {
+  const { csv } = z.object({ csv: z.string().min(1).max(256 * 1024) }).parse(req.body);
+  res.json(await importTariffCsv(csv));
+}
+
 async function closeTariff(req, res) {
   const { effectiveTo } = z.object({ effectiveTo: z.coerce.date() }).parse(req.body);
   const tariff = await getPrisma().electricityTariff.update({
@@ -116,5 +122,312 @@ async function closeTariff(req, res) {
 
 module.exports = {
   login, updateCredentials, overview, listProvinces, listMunicipalities, createMunicipality,
-  listTariffs, createTariff, closeTariff
+  listTariffs, createTariff, importTariffs, closeTariff, parseTariffCsv, importTariffCsv
 };
+
+const tariffCsvColumns = [
+  'municipality', 'province', 'name', 'customerCategory', 'effectiveFrom',
+  'lastVerifiedAt', 'fixedMonthlyCharge', 'energyChargePerKwh', 'sourceUrl',
+  'feedInRatePerKwh', 'timeOfUseRates'
+];
+const requiredTariffCsvColumns = tariffCsvColumns.slice(0, 9);
+
+function parseTariffCsv(csv) {
+  const rows = parseCsvRows(csv);
+  if (!rows.length) throw tariffCsvError('The CSV file is empty.');
+  const headers = rows.shift().map((header, index) => (index === 0 ? header.replace(/^\uFEFF/, '') : header).trim());
+  if (new Set(headers).size !== headers.length) throw tariffCsvError('The CSV contains duplicate column names.');
+  const missingColumns = requiredTariffCsvColumns.filter((column) => !headers.includes(column));
+  const unknownColumns = headers.filter((column) => !tariffCsvColumns.includes(column));
+  if (missingColumns.length || unknownColumns.length) {
+    const problems = [
+      ...(missingColumns.length ? [`Missing columns: ${missingColumns.join(', ')}`] : []),
+      ...(unknownColumns.length ? [`Unknown columns: ${unknownColumns.join(', ')}`] : [])
+    ];
+    throw tariffCsvError(`${problems.join('. ')}.`);
+  }
+  const records = [];
+  for (const [index, row] of rows.entries()) {
+    if (row.every((value) => !value.trim())) continue;
+    const line = index + 2;
+    if (row.length !== headers.length) throw tariffCsvError(`Row ${line} has ${row.length} values; expected ${headers.length}.`);
+    const values = Object.fromEntries(headers.map((header, column) => [header, row[column].trim()]));
+    if (headers.slice(2).every((header) => !values[header])) continue;
+    const rowData = {
+      municipality: values.municipality,
+      province: values.province,
+      name: values.name,
+      customerCategory: values.customerCategory,
+      effectiveFrom: parseCsvDate(values.effectiveFrom, 'effectiveFrom', line),
+      lastVerifiedAt: parseCsvDate(values.lastVerifiedAt, 'lastVerifiedAt', line),
+      fixedMonthlyCharge: parseCsvNumber(values.fixedMonthlyCharge, 'fixedMonthlyCharge', line),
+      energyChargePerKwh: parseCsvNumber(values.energyChargePerKwh, 'energyChargePerKwh', line),
+      sourceUrl: values.sourceUrl,
+      ...(values.feedInRatePerKwh ? { feedInRatePerKwh: parseCsvNumber(values.feedInRatePerKwh, 'feedInRatePerKwh', line) } : {}),
+      ...(values.timeOfUseRates ? { timeOfUseRates: parseTimeOfUseRates(values.timeOfUseRates, line) } : {})
+    };
+    const result = z.object({
+      municipality: z.string().trim().min(2).max(120),
+      province: z.string().trim().min(2).max(80),
+      name: z.string().trim().min(1).max(120),
+      customerCategory: z.string().trim().min(1).max(80),
+      effectiveFrom: z.date(),
+      lastVerifiedAt: z.date(),
+      fixedMonthlyCharge: z.number().min(0).max(100000000),
+      energyChargePerKwh: z.number().min(0).max(10000),
+      sourceUrl: z.string().url().max(500).refine((value) => new URL(value).protocol === 'https:', 'Source URL must use HTTPS.'),
+      feedInRatePerKwh: z.number().min(0).max(10000).optional(),
+      timeOfUseRates: z.record(z.string(), z.unknown()).optional()
+    }).safeParse(rowData);
+    if (!result.success) {
+      const issue = result.error.issues[0];
+      throw tariffCsvError(`Row ${line}: ${issue.path.join('.') || 'record'} ${issue.message}`);
+    }
+    records.push({ ...result.data, sourceLine: line });
+    if (records.length > 500) throw tariffCsvError('A single CSV import cannot exceed 500 tariff records.');
+  }
+  if (!records.length) throw tariffCsvError('The CSV contains no tariff records.');
+
+  const seen = new Set();
+  for (const record of records) {
+    const key = tariffImportKey(record.municipality, record.province, record.name, record.customerCategory, record.effectiveFrom);
+    if (seen.has(key)) throw tariffCsvError(`Row ${record.sourceLine} duplicates a tariff record elsewhere in the CSV.`);
+    seen.add(key);
+  }
+  return records;
+}
+
+async function importTariffCsv(csv, database = getPrisma()) {
+  const records = parseTariffCsv(csv);
+  const canonicalAreas = new Set(municipalityIndex.map((item) => municipalityKey(item.name, item.province)));
+  const invalidAreas = records.filter((record) => !canonicalAreas.has(municipalityKey(record.municipality, record.province)));
+  if (invalidAreas.length) {
+    const first = invalidAreas[0];
+    throw tariffCsvError(`Row ${first.sourceLine}: ${first.municipality} · ${first.province} does not match the map's municipality boundary data.`);
+  }
+
+  return database.$transaction(async (transaction) => {
+    const provinceNames = [...new Set(records.map((record) => record.province))];
+    const provinces = await transaction.province.findMany({ where: { name: { in: provinceNames } } });
+    const provincesByName = new Map(provinces.map((province) => [normalizeImportName(province.name), province]));
+    const missingProvinces = provinceNames.filter((name) => !provincesByName.has(normalizeImportName(name)));
+    if (missingProvinces.length) {
+      throw tariffCsvError(`Province records are missing from the database: ${missingProvinces.join(', ')}. Run the database seed before importing tariffs.`);
+    }
+
+    const provinceIds = [...new Set(provinces.map((province) => province.id))];
+    const existingMunicipalities = await transaction.municipality.findMany({
+      where: { provinceId: { in: provinceIds } },
+      select: { id: true, name: true, provinceId: true }
+    });
+    const municipalitiesByKey = new Map(existingMunicipalities.map((municipality) => {
+      const province = provinces.find((item) => item.id === municipality.provinceId);
+      return [municipalityKey(municipality.name, province.name), municipality];
+    }));
+    const municipalitiesToCreate = new Map();
+    for (const record of records) {
+      const key = municipalityKey(record.municipality, record.province);
+      if (!municipalitiesByKey.has(key)) {
+        const province = provincesByName.get(normalizeImportName(record.province));
+        municipalitiesToCreate.set(key, { name: record.municipality, provinceId: province.id });
+      }
+    }
+    let municipalityCreateCount = 0;
+    if (municipalitiesToCreate.size) {
+      const createResult = await transaction.municipality.createMany({
+        data: [...municipalitiesToCreate.values()],
+        skipDuplicates: true
+      });
+      municipalityCreateCount = createResult.count;
+    }
+    const importedMunicipalities = await transaction.municipality.findMany({
+      where: { provinceId: { in: provinceIds } },
+      select: { id: true, name: true, provinceId: true }
+    });
+    const provinceById = new Map(provinces.map((province) => [province.id, province]));
+    for (const municipality of importedMunicipalities) {
+      const province = provinceById.get(municipality.provinceId);
+      municipalitiesByKey.set(municipalityKey(municipality.name, province.name), municipality);
+    }
+
+    const municipalityIds = records.map((record) => {
+      const municipality = municipalitiesByKey.get(municipalityKey(record.municipality, record.province));
+      if (!municipality) throw tariffCsvError(`Row ${record.sourceLine}: the municipality could not be matched after import.`);
+      return municipality.id;
+    });
+    const existingTariffs = await transaction.electricityTariff.findMany({
+      where: { municipalityId: { in: [...new Set(municipalityIds)] } },
+      select: {
+        municipalityId: true, name: true, customerCategory: true, effectiveFrom: true,
+        lastVerifiedAt: true, fixedMonthlyCharge: true, energyChargePerKwh: true,
+        sourceUrl: true, feedInRatePerKwh: true, timeOfUseRates: true
+      }
+    });
+    const municipalitiesById = new Map(importedMunicipalities.map((municipality) => [
+      municipality.id,
+      { ...municipality, province: provinceById.get(municipality.provinceId) }
+    ]));
+    const existingTariffsByKey = new Map(existingTariffs.map((tariff) => {
+      const municipality = municipalitiesById.get(tariff.municipalityId);
+      return [tariffImportKey(
+        municipality.name,
+        municipality.province.name,
+        tariff.name,
+        tariff.customerCategory,
+        tariff.effectiveFrom
+      ), tariff];
+    }));
+    const toCreate = [];
+    let skippedDuplicates = 0;
+    records.forEach((record) => {
+      const municipality = municipalitiesByKey.get(municipalityKey(record.municipality, record.province));
+      const key = tariffImportKey(record.municipality, record.province, record.name, record.customerCategory, record.effectiveFrom);
+      const existing = existingTariffsByKey.get(key);
+      if (existing) {
+        if (!sameTariffValues(existing, record)) {
+          throw tariffCsvError(`Row ${record.sourceLine}: this tariff name, category, municipality, and effective date already exist with different values. Resolve the existing record before importing.`);
+        }
+        skippedDuplicates += 1;
+      } else {
+        toCreate.push({
+          municipalityId: municipality.id,
+          name: record.name,
+          customerCategory: record.customerCategory,
+          effectiveFrom: record.effectiveFrom,
+          lastVerifiedAt: record.lastVerifiedAt,
+          fixedMonthlyCharge: record.fixedMonthlyCharge,
+          energyChargePerKwh: record.energyChargePerKwh,
+          sourceUrl: record.sourceUrl,
+          ...(record.feedInRatePerKwh === undefined ? {} : { feedInRatePerKwh: record.feedInRatePerKwh }),
+          ...(record.timeOfUseRates === undefined ? {} : { timeOfUseRates: record.timeOfUseRates })
+        });
+      }
+    });
+    const result = toCreate.length
+      ? await transaction.electricityTariff.createMany({ data: toCreate })
+      : { count: 0 };
+    return {
+      imported: result.count,
+      skippedDuplicates,
+      municipalitiesCreated: municipalityCreateCount
+    };
+  });
+}
+
+function parseCsvRows(csv) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  let closedQuote = false;
+  for (let index = 0; index < csv.length; index += 1) {
+    const character = csv[index];
+    if (quoted) {
+      if (character === '"') {
+        if (csv[index + 1] === '"') {
+          field += '"';
+          index += 1;
+        } else {
+          quoted = false;
+          closedQuote = true;
+        }
+      } else {
+        field += character;
+      }
+      continue;
+    }
+    if (closedQuote && character !== ',' && character !== '\r' && character !== '\n' && !/\s/.test(character)) {
+      throw tariffCsvError('The CSV contains invalid text after a quoted value.');
+    }
+    if (character === '"') {
+      if (field.length) throw tariffCsvError('The CSV contains a quote inside an unquoted value.');
+      quoted = true;
+      closedQuote = false;
+    } else if (character === ',') {
+      row.push(field);
+      field = '';
+      closedQuote = false;
+    } else if (character === '\r' || character === '\n') {
+      if (character === '\r' && csv[index + 1] === '\n') index += 1;
+      row.push(field);
+      if (row.some((value) => value.trim())) rows.push(row);
+      row = [];
+      field = '';
+      closedQuote = false;
+    } else if (!closedQuote) {
+      field += character;
+    }
+  }
+  if (quoted) throw tariffCsvError('The CSV contains an unclosed quoted value.');
+  row.push(field);
+  if (row.some((value) => value.trim())) rows.push(row);
+  return rows;
+}
+
+function parseCsvDate(value, field, line) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw tariffCsvError(`Row ${line}: ${field} must use YYYY-MM-DD format.`);
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    throw tariffCsvError(`Row ${line}: ${field} is not a valid date.`);
+  }
+  return date;
+}
+
+function parseCsvNumber(value, field, line) {
+  if (!value || !Number.isFinite(Number(value))) throw tariffCsvError(`Row ${line}: ${field} must be a number.`);
+  return Number(value);
+}
+
+function parseTimeOfUseRates(value, line) {
+  let rates;
+  try {
+    rates = JSON.parse(value);
+  } catch {
+    throw tariffCsvError(`Row ${line}: timeOfUseRates must contain valid JSON.`);
+  }
+  if (!rates || Array.isArray(rates) || typeof rates !== 'object') {
+    throw tariffCsvError(`Row ${line}: timeOfUseRates must be a JSON object.`);
+  }
+  return rates;
+}
+
+function tariffImportKey(municipality, province, name, category, effectiveFrom) {
+  return [
+    municipalityKey(municipality, province),
+    normalizeImportName(name),
+    normalizeImportName(category),
+    new Date(effectiveFrom).toISOString().slice(0, 10)
+  ].join('|');
+}
+
+function municipalityKey(name, province) {
+  return `${normalizeImportName(name)}|${normalizeImportName(province)}`;
+}
+
+function normalizeImportName(value) {
+  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-ZA');
+}
+
+function sameTariffValues(existing, record) {
+  return Number(existing.fixedMonthlyCharge) === record.fixedMonthlyCharge
+    && Number(existing.energyChargePerKwh) === record.energyChargePerKwh
+    && (existing.feedInRatePerKwh == null ? null : Number(existing.feedInRatePerKwh)) === (record.feedInRatePerKwh ?? null)
+    && new Date(existing.lastVerifiedAt).toISOString().slice(0, 10) === record.lastVerifiedAt.toISOString().slice(0, 10)
+    && existing.sourceUrl === record.sourceUrl
+    && JSON.stringify(sortJson(existing.timeOfUseRates ?? null)) === JSON.stringify(sortJson(record.timeOfUseRates ?? null));
+}
+
+function sortJson(value) {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortJson(value[key])]));
+  }
+  return value;
+}
+
+function tariffCsvError(message) {
+  const error = new Error(message);
+  error.status = 400;
+  error.code = 'INVALID_TARIFF_CSV';
+  return error;
+}

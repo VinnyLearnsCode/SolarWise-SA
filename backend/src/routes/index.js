@@ -33,6 +33,7 @@ router.get('/admin/municipalities', requireAdmin, admin.listMunicipalities);
 router.post('/admin/municipalities', requireAdmin, admin.createMunicipality);
 router.get('/admin/tariffs', requireAdmin, admin.listTariffs);
 router.post('/admin/tariffs', requireAdmin, admin.createTariff);
+router.post('/admin/tariffs/import', requireAdmin, admin.importTariffs);
 router.post('/admin/tariffs/:id/close', requireAdmin, admin.closeTariff);
 router.get('/weather', async (req, res) => {
   const { latitude, longitude } = coordinates(req.query);

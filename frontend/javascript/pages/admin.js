@@ -65,6 +65,15 @@ async function loadOverview(token, notice = '') {
           <button class="button primary" type="submit" ${municipalityData.municipalities.length ? '' : 'disabled'}>Publish tariff</button>
         </form>
       </div>
+      <form id="admin-tariff-import-form" class="form-panel">
+        <h2>Import verified municipal tariffs</h2>
+        <p>The CSV worksheet lists all 213 local municipalities. Fill only rows with an official-source flat-rate tariff; untouched blank tariff rows are ignored. Municipality and province names must match the map boundary data, and missing municipality records will be added automatically.</p>
+        <p class="assumptions">Do not reduce inclining-block tariffs to one rate. The current calculator models a single energy rate; complex schedules should remain unpublished until the model supports them. Each row needs an HTTPS source and verification date. The importer checks these fields, but an administrator must confirm the source is official and the figures match it.</p>
+        <p><a href="/data/tariff-import-template.csv" download>Download the CSV template</a></p>
+        <label>Tariff CSV<input name="csvFile" type="file" accept=".csv,text/csv" required></label>
+        <button class="button secondary" type="submit">Validate and import CSV</button>
+        <p id="admin-tariff-import-status" class="form-error" role="status" aria-live="polite"></p>
+      </form>
       <h2>Tariff records</h2>
       <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Municipality</th><th>Tariff</th><th>Category</th><th>Charges (R)</th><th>Effective</th><th>Source / verified</th><th>Action</th></tr></thead><tbody>${tariffData.tariffs.map((tariff) => `
         <tr><td>${SolarFormat.escape(tariff.municipality.name)} · ${SolarFormat.escape(tariff.municipality.province.name)}</td>
@@ -137,6 +146,28 @@ async function loadOverview(token, notice = '') {
         section.querySelector('#admin-message').textContent = error instanceof SyntaxError
           ? 'Time-of-use rates must be valid JSON.'
           : error.message;
+      }
+    });
+    document.getElementById('admin-tariff-import-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const status = form.querySelector('#admin-tariff-import-status');
+      const file = new FormData(form).get('csvFile');
+      status.textContent = '';
+      if (!(file instanceof File) || !file.size) {
+        status.textContent = 'Choose a non-empty CSV file.';
+        return;
+      }
+      if (file.size > 256 * 1024) {
+        status.textContent = 'The CSV file must be 256 KB or smaller.';
+        return;
+      }
+      try {
+        const result = await SolarAPI.post('/admin/tariffs/import', { csv: await file.text() });
+        const summary = `${result.imported} tariff records imported; ${result.skippedDuplicates} duplicates skipped; ${result.municipalitiesCreated} municipality records created.`;
+        await loadOverview(token, summary);
+      } catch (error) {
+        status.textContent = error.message;
       }
     });
     section.querySelectorAll('.close-tariff-form').forEach((form) => form.addEventListener('submit', async (event) => {
