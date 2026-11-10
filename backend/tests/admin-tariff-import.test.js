@@ -33,6 +33,11 @@ test('tariff CSV parser ignores untouched municipality worksheet rows', () => {
   assert.equal(records[0].sourceLine, 3);
 });
 
+test('tariff CSV parser explains that the blank municipality worksheet needs tariff details', () => {
+  const blankRow = ['Abaqulusi', 'KwaZulu-Natal', ...Array(9).fill('')].join(',');
+  assert.throws(() => parseTariffCsv(`${header}\n${blankRow}`), /lists municipality names only; fill in at least one tariff row/);
+});
+
 test('tariff CSV parser rejects missing headers, malformed dates, and insecure sources', () => {
   assert.throws(() => parseTariffCsv('municipality,province\nCity of Johannesburg,Gauteng'), /Missing columns/);
   assert.throws(() => parseTariffCsv(`${header}\n${validRow.replace('2026-07-01', '2026-02-30')}`), /not a valid date/);

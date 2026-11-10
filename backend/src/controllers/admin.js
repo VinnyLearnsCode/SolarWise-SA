@@ -186,7 +186,9 @@ function parseTariffCsv(csv) {
     records.push({ ...result.data, sourceLine: line });
     if (records.length > 500) throw tariffCsvError('A single CSV import cannot exceed 500 tariff records.');
   }
-  if (!records.length) throw tariffCsvError('The CSV contains no tariff records.');
+  if (!records.length) {
+    throw tariffCsvError('No tariff records found. The worksheet lists municipality names only; fill in at least one tariff row with its name, customer category, effective date, verification date, fixed charge, energy rate, and official source URL.');
+  }
 
   const seen = new Set();
   for (const record of records) {
