@@ -79,9 +79,10 @@ async function loadOverview(token, notice = '') {
       </div>
       <form id="admin-tariff-import-form" class="form-panel">
         <h2>Import verified municipal tariffs</h2>
-        <p>The CSV worksheet lists all 213 local municipalities. Fill only rows with an official-source flat-rate tariff; untouched blank tariff rows are ignored. Municipality and province names must match the map boundary data, and missing municipality records will be added automatically.</p>
-        <p class="assumptions">Do not reduce inclining-block tariffs to one rate. The current calculator models a single energy rate; complex schedules should remain unpublished until the model supports them. Each row needs an HTTPS source and verification date. The importer checks these fields, but an administrator must confirm the source is official and the figures match it.</p>
-        <p><a href="/data/tariff-import-template.csv" download>Download the CSV template</a></p>
+        <p>The worksheet lists all 213 local municipalities. You can import flat rates or tiered schedules; untouched blank rows are ignored. Municipality and province names must match the map boundary data, and missing municipality records will be added automatically.</p>
+        <p class="assumptions">Keep published tiered blocks and fixed-charge components as stated in the official source; do not convert them to a single rate. Each row needs an HTTPS source and verification date. Confirm the source is official and the figures match before importing.</p>
+        <p><a href="/data/verified-metro-tariffs-2026-27-partial.csv" download>Download verified Johannesburg tariffs (partial, 2 plans)</a></p>
+        <p><a href="/data/tariff-import-template.csv" download>Download the blank CSV template (213 municipalities)</a></p>
         <label>Tariff CSV<input name="csvFile" type="file" accept=".csv,text/csv" required></label>
         <button class="button secondary" type="submit">Validate and import CSV</button>
         <p id="admin-tariff-import-status" class="form-error" role="status" aria-live="polite"></p>

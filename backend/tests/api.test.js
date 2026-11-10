@@ -111,6 +111,10 @@ test('health endpoint responds without a database connection', async (context) =
   assert.match(adminScript, /Change administrator credentials/);
   assert.match(adminScript, /current-password/);
   assert.match(adminScript, /new-password/);
+  assert.match(adminScript, /verified-metro-tariffs-2026-27-partial\.csv/);
+  const verifiedTariffCsv = await fetch(`${base}/data/verified-metro-tariffs-2026-27-partial.csv`);
+  assert.equal(verifiedTariffCsv.status, 200);
+  assert.match(await verifiedTariffCsv.text(), /Residential Prepaid High/);
   const missingPage = await fetch(`${base}/this-page-does-not-exist`, { headers: { accept: 'text/html' } });
   assert.equal(missingPage.status, 404);
   assert.match(await missingPage.text(), /That page isn't/);
