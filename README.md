@@ -4,6 +4,8 @@ SolarWise SA is a no-login solar decision-support application for South African 
 
 The calculator includes a bill-entry guide, browser-only saved assessments with JSON export/import, a print-ready solar plan that can be saved as PDF from the browser print dialog, and links to a local installer-quote worksheet at `/html/quotes.html`. Quote details and imported/exported assessments stay in browser storage unless the user explicitly exports or shares a file; never enter account numbers or other sensitive identifiers.
 
+The tariff-aware bill simulator at `/html/tariff-simulator.html` compares energy charges before and after solar using an active published flat or tiered tariff where available, including recurring fixed charges. Users can enter a flat rate from their bill when no published tariff is available. It does not model time-of-use billing, export credits, or taxes not stated by the source; results remain estimates.
+
 ## Requirements
 
 - Node.js 20 or newer and npm

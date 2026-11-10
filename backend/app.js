@@ -13,7 +13,7 @@ const publicPages = [
   'calculator.html', 'compare.html', 'contact.html', 'education.html',
   'energy-usage.html', 'faq.html', 'financing.html', 'off-grid.html',
   'planner.html', 'privacy.html', 'quotes.html', 'solar-explorer.html',
-  'solar-map.html'
+  'solar-map.html', 'tariff-simulator.html'
 ];
 
 app.disable('x-powered-by');

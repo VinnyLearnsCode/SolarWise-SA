@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en-ZA">
+<head>
+  <script src="../javascript/services/theme.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Solar bill savings simulator — SolarWise SA</title>
+  <meta name="description" content="Compare estimated electricity bills before and after solar using published flat or tiered South African tariffs, where available.">
+  <link rel="canonical" href="https://solarwise-sa-vinny-preview.onrender.com/html/tariff-simulator.html">
+  <meta property="og:title" content="Solar bill savings simulator — SolarWise SA">
+  <meta property="og:description" content="Compare estimated electricity bills before and after solar using published flat or tiered South African tariffs, where available.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="en_ZA">
+  <meta property="og:site_name" content="SolarWise SA">
+  <meta property="og:url" content="https://solarwise-sa-vinny-preview.onrender.com/html/tariff-simulator.html">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Solar bill savings simulator — SolarWise SA">
+  <meta name="twitter:description" content="Compare estimated electricity bills before and after solar using published flat or tiered South African tariffs, where available.">
+  <meta name="robots" content="index, follow">
+  <link rel="stylesheet" href="../css/base/tokens.css">
+  <link rel="stylesheet" href="../css/themes/dark.css">
+  <link rel="stylesheet" href="../css/utilities/accessibility.css">
+  <link rel="stylesheet" href="../css/layouts/site.css">
+  <link rel="stylesheet" href="../css/components/ui.css">
+  <link rel="stylesheet" href="../css/pages/tariff-simulator.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span>SolarWise <span>SA</span></a>
+    <button class="menu-toggle" aria-label="Open navigation" aria-expanded="false">☰</button>
+    <nav class="nav-links" aria-label="Main navigation">
+      <a href="calculator.html">Solar calculator</a>
+      <a href="tariff-simulator.html" aria-current="page">Bill simulator</a>
+      <a href="solar-explorer.html">Solar explorer</a>
+      <a href="solar-map.html">Solar map</a>
+      <a href="education.html">Learn</a>
+      <a href="faq.html">FAQs</a>
+    </nav>
+    <button class="theme-toggle" aria-label="Toggle colour theme">◐</button>
+  </header>
+  <main class="wrap page-wrap">
+    <div class="page-intro">
+      <span class="eyebrow">Use your actual tariff</span>
+      <h1>What could solar<br><span>change on your bill?</span></h1>
+      <p>Compare your current energy bill with an estimate after solar. Published flat and tiered tariffs are used where available; missing data is never filled in with a made-up municipal rate.</p>
+    </div>
+    <div class="simulator-layout">
+      <form class="panel form-panel" id="tariff-simulator-form">
+        <h2>1. Choose an electricity tariff</h2>
+        <label for="simulator-tariff">Published tariff or your own rate
+          <select id="simulator-tariff" name="tariff" required>
+            <option value="custom">Enter a flat rate from my bill</option>
+          </select>
+        </label>
+        <div id="custom-tariff-fields" class="field-grid">
+          <label for="custom-energy-rate">Energy rate <span class="hint">R/kWh from your bill</span>
+            <input id="custom-energy-rate" name="customEnergyRate" type="number" min="0.0001" max="10000" step="any" inputmode="decimal" required>
+          </label>
+          <label for="custom-fixed-charge">Monthly fixed charges <span class="hint">R/month; optional</span>
+            <input id="custom-fixed-charge" name="customFixedCharge" type="number" min="0" max="1000000" step="any" inputmode="decimal" value="0">
+          </label>
+        </div>
+        <p id="simulator-tariff-status" class="simulator-status" role="status" aria-live="polite">Loading active, administrator-maintained tariffs…</p>
+
+        <h2>2. Add your monthly energy assumptions</h2>
+        <div class="field-grid">
+          <label for="monthly-consumption">Grid electricity use <span class="hint">kWh/month before solar</span>
+            <input id="monthly-consumption" name="monthlyConsumptionKwh" type="number" min="1" max="1000000" step="any" inputmode="decimal" required>
+          </label>
+          <label for="monthly-generation">Expected solar generation <span class="hint">kWh/month; use a PVGIS or installer estimate</span>
+            <input id="monthly-generation" name="monthlySolarGenerationKwh" type="number" min="0" max="1000000" step="any" inputmode="decimal" required>
+          </label>
+          <label for="self-consumption">Solar used directly at home <span class="hint">percent of generation; editable assumption</span>
+            <input id="self-consumption" name="selfConsumptionPercent" type="number" min="0" max="100" step="1" value="75" required>
+          </label>
+        </div>
+        <p class="form-disclaimer">Solar used at home reduces grid purchases. We do not assume that surplus solar earns export credits.</p>
+        <button class="button primary full" type="submit">Compare estimated bills →</button>
+        <p id="simulator-error" class="form-error" role="alert"></p>
+      </form>
+      <section id="simulator-results" class="panel simulator-results" aria-live="polite">
+        <div class="empty-state"><span class="empty-icon">R</span><h2>Your comparison will appear here</h2><p>Choose a tariff and enter your monthly usage and expected solar generation.</p></div>
+      </section>
+    </div>
+    <p class="data-caveat">Use the <a href="solar-explorer.html">Solar Explorer</a> or <a href="calculator.html">solar calculator</a> for modeled production estimates. This simulator is not a quote or a guaranteed bill; it does not model time-of-use tariffs, taxes not included in the published schedule, demand charges, seasonal changes, battery dispatch or feed-in payments.</p>
+  </main>
+  <footer class="footer"><div class="wrap footer-row"><a class="brand" href="index.html"><span class="brand-mark">S</span>SolarWise <span>SA</span></a><p>Estimated savings depend on your tariff, usage and solar assumptions.</p></div></footer>
+  <script src="../javascript/services/site.js"></script>
+  <script src="../javascript/calculators/tariff-math.js"></script>
+  <script src="../javascript/pages/tariff-simulator.js"></script>
+</body>
+</html>

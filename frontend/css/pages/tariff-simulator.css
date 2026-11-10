@@ -1,0 +1,29 @@
+.simulator-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start}
+.simulator-layout>.form-panel{position:sticky;top:96px}
+.simulator-layout h2{margin-top:0}
+.simulator-layout h2:not(:first-child){margin-top:25px}
+.simulator-layout label{display:block;font-size:12px;font-weight:650;margin-bottom:12px}
+.simulator-layout input,.simulator-layout select{display:block;width:100%;margin-top:6px;padding:11px 12px;border:1px solid var(--line);border-radius:11px;background:var(--bg);color:var(--text)}
+.simulator-layout input:focus,.simulator-layout select:focus{border-color:var(--blue);outline:2px solid var(--blue-pale)}
+.simulator-layout .field-grid{gap:12px}
+.simulator-status{color:var(--muted);font-size:11px;line-height:1.55}
+.simulator-status a,.simulator-source a{font-weight:700}
+.simulator-results{min-height:440px}
+.simulator-saving{padding:21px;border-radius:16px;background:var(--blue-pale)}
+.simulator-saving small,.simulator-saving strong{display:block}
+.simulator-saving small{color:var(--muted);font-size:12px}
+.simulator-saving strong{margin:5px 0;font-size:clamp(28px,4vw,40px);line-height:1.15}
+.simulator-saving strong span{font-size:14px;font-weight:600}
+.simulator-bill-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.simulator-bill-grid>div{padding:15px;border:1px solid var(--line);border-radius:13px}
+.simulator-bill-grid small,.simulator-bill-grid strong,.simulator-bill-grid span{display:block}
+.simulator-bill-grid small,.simulator-bill-grid span{color:var(--muted);font-size:11px}
+.simulator-bill-grid strong{margin:4px 0;font-size:21px}
+.simulator-breakdown{margin:16px 0 0}
+.simulator-breakdown>div{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--line);font-size:12px}
+.simulator-breakdown dt{color:var(--muted)}
+.simulator-breakdown dd{margin:0;text-align:right;font-weight:700}
+.simulator-results .assumptions{font-size:11px}
+.simulator-source{font-size:12px}
+@media(max-width:850px){.simulator-layout{grid-template-columns:1fr 1fr}}
+@media(max-width:680px){.simulator-layout{grid-template-columns:1fr}.simulator-layout>.form-panel{position:static}.simulator-layout .field-grid,.simulator-bill-grid{grid-template-columns:1fr}.simulator-results{min-height:250px}}

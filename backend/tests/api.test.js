@@ -81,12 +81,14 @@ test('health endpoint responds without a database connection', async (context) =
   const sitemapXml = await sitemap.text();
   assert.match(sitemapXml, /\/html\/calculator\.html/);
   assert.match(sitemapXml, /\/html\/quotes\.html/);
+  assert.match(sitemapXml, /\/html\/tariff-simulator\.html/);
   assert.doesNotMatch(sitemapXml, /dashboard\.html/);
   const publicPages = [
     'index.html', 'about.html', 'affordability.html', 'battery.html',
     'calculator.html', 'compare.html', 'contact.html', 'education.html',
     'energy-usage.html', 'faq.html', 'financing.html', 'off-grid.html',
-    'planner.html', 'privacy.html', 'quotes.html', 'solar-explorer.html'
+    'planner.html', 'privacy.html', 'quotes.html', 'solar-explorer.html',
+    'tariff-simulator.html'
   ];
   for (const page of publicPages) {
     const response = await fetch(`${base}/html/${page}`);
@@ -117,6 +119,10 @@ test('health endpoint responds without a database connection', async (context) =
   }
   const themeScript = await fetch(`${base}/javascript/services/theme.js`);
   assert.equal(themeScript.status, 200);
+  const tariffMathScript = await fetch(`${base}/javascript/calculators/tariff-math.js`);
+  assert.equal(tariffMathScript.status, 200);
+  const tariffSimulatorScript = await fetch(`${base}/javascript/pages/tariff-simulator.js`);
+  assert.equal(tariffSimulatorScript.status, 200);
   const dashboard = await fetch(`${base}/html/dashboard.html`);
   const dashboardHtml = await dashboard.text();
   assert.match(dashboardHtml, /<meta name="robots" content="noindex, nofollow">/);
