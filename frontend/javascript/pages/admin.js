@@ -1,4 +1,13 @@
 const loginForm = document.getElementById('admin-login');
+
+function adminPost(token, path, payload) {
+  return SolarAPI.request(path, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload)
+  });
+}
+
 loginForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(loginForm));
@@ -127,7 +136,7 @@ async function loadOverview(token, notice = '') {
     document.getElementById('municipality-form').addEventListener('submit', async (event) => {
       event.preventDefault();
       const data = Object.fromEntries(new FormData(event.currentTarget));
-      await mutateAdmin(token, () => SolarAPI.post('/admin/municipalities', data));
+      await mutateAdmin(token, () => adminPost(token, '/admin/municipalities', data));
     });
     document.getElementById('admin-tariff-form').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -141,7 +150,7 @@ async function loadOverview(token, notice = '') {
           ...(data.feedInRatePerKwh ? { feedInRatePerKwh: Number(data.feedInRatePerKwh) } : {}),
           ...(timeOfUseRates === undefined ? {} : { timeOfUseRates })
         };
-        await mutateAdmin(token, () => SolarAPI.post('/admin/tariffs', payload));
+        await mutateAdmin(token, () => adminPost(token, '/admin/tariffs', payload));
       } catch (error) {
         section.querySelector('#admin-message').textContent = error instanceof SyntaxError
           ? 'Time-of-use rates must be valid JSON.'
@@ -163,7 +172,7 @@ async function loadOverview(token, notice = '') {
         return;
       }
       try {
-        const result = await SolarAPI.post('/admin/tariffs/import', { csv: await file.text() });
+        const result = await adminPost(token, '/admin/tariffs/import', { csv: await file.text() });
         const summary = `${result.imported} tariff records imported; ${result.skippedDuplicates} duplicates skipped; ${result.municipalitiesCreated} municipality records created.`;
         await loadOverview(token, summary);
       } catch (error) {
@@ -173,7 +182,7 @@ async function loadOverview(token, notice = '') {
     section.querySelectorAll('.close-tariff-form').forEach((form) => form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const effectiveTo = new FormData(form).get('effectiveTo');
-      await mutateAdmin(token, () => SolarAPI.post(`/admin/tariffs/${encodeURIComponent(form.dataset.id)}/close`, { effectiveTo }));
+      await mutateAdmin(token, () => adminPost(token, `/admin/tariffs/${encodeURIComponent(form.dataset.id)}/close`, { effectiveTo }));
     }));
   } catch (error) {
     sessionStorage.removeItem('solarwise-admin-token');

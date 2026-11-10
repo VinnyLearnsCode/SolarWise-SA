@@ -90,3 +90,9 @@ test('tariff CSV import endpoint requires administrator authentication', async (
   assert.equal(response.status, 401);
   assert.equal((await response.json()).error.code, 'UNAUTHORIZED');
 });
+
+test('admin dashboard sends its bearer token with tariff imports', () => {
+  const script = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'javascript', 'pages', 'admin.js'), 'utf8');
+  assert.match(script, /function adminPost\(token, path, payload\)[\s\S]*Authorization: `Bearer \$\{token\}`/);
+  assert.match(script, /adminPost\(token, '\/admin\/tariffs\/import'/);
+});
