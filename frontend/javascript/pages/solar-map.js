@@ -485,7 +485,7 @@ function updateLegend() {
     activePaletteRange = null;
     const detail = currentLayer === 'tariff' && tariffLoadError ? SolarFormat.escape(tariffLoadError)
       : currentLayer === 'solar' ? 'PVGIS radiation model unavailable or not yet loaded'
-        : currentLayer === 'tariff' ? 'No verified active tariffs for this category'
+        : currentLayer === 'tariff' ? 'No verified municipal tariffs have been published for this category yet'
           : 'Enter assumptions to calculate this layer';
     legend.innerHTML = `<span class="map-legend-title">${SolarFormat.escape(layerLabel(currentLayer))}</span><span class="map-legend-no-data"><i></i>Data unavailable · ${detail}</span>`;
     refreshMap();
@@ -511,7 +511,7 @@ async function loadTariffs() {
       tariffCategoryLabel.hidden = currentLayer !== 'tariff';
       tariffCategory.hidden = currentLayer !== 'tariff';
     }
-    tariffLoadError = categories.length ? null : 'No active, sourced tariff records are available.';
+    tariffLoadError = categories.length ? null : 'No active, sourced tariff records are available yet. Publish approved municipal tariffs from the admin dashboard.';
     refreshMap();
     updateLegend();
     if (selectedFeature) renderSelectedArea();
@@ -711,7 +711,7 @@ function renderMunicipalityTariffInfo(tariff) {
     return `<div class="map-info-item"><b>Municipal electricity tariff</b><span class="map-unavailable">Data unavailable</span><small>${SolarFormat.escape(tariffLoadError)}</small></div>`;
   }
   if (!tariff) {
-    return `<div class="map-info-item"><b>Municipal electricity tariff · ${SolarFormat.escape(tariffCategory.value || 'selected category')}</b><span class="map-unavailable">Data unavailable</span><small>No active, sourced record is available for this municipality and customer category. This is not an estimate.</small></div>`;
+    return `<div class="map-info-item"><b>Municipal electricity tariff · ${SolarFormat.escape(tariffCategory.value || 'selected category')}</b><span class="map-unavailable">Data unavailable</span><small>No verified municipal tariff has been published for this municipality and customer category yet. Add an approved tariff record in the admin dashboard to populate this field.</small></div>`;
   }
   return `<div class="map-info-item"><b>Official tariff · ${SolarFormat.escape(tariff.customerCategory)}</b><span>R${formatNumber(Number(tariff.energyChargePerKwh), 4)} per kWh</span><small>${SolarFormat.escape(tariff.name)} · effective ${formatDate(tariff.effectiveFrom)} · last verified ${formatDate(tariff.lastVerifiedAt)}${isOldTariff(tariff) ? ' · check for updates' : ''}<br>Source: <a href="${SolarFormat.escape(tariff.sourceUrl)}" target="_blank" rel="noopener noreferrer">official tariff publication</a></small></div>`;
 }
