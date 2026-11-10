@@ -2,7 +2,8 @@ const express = require('express');
 const { z } = require('zod');
 const calculations = require('../controllers/calculations');
 const { getWeather } = require('../integrations/weather');
-const { getSolarPotential } = require('../integrations/pvgis');
+const { getSolarPotential, getSolarIrradiation } = require('../integrations/pvgis');
+const { assessSolar } = require('../calculations/solar');
 const { getPrisma, checkDatabaseConnection } = require('../utils/prisma');
 const admin = require('../controllers/admin');
 const { requireAdmin } = require('../middleware/admin-auth');
@@ -44,10 +45,66 @@ router.get('/solar-potential', async (req, res) => {
   const tilt = z.coerce.number().min(0).max(90).default(30).parse(req.query.tilt);
   res.json(await getSolarPotential(latitude, longitude, peakPower, orientation, tilt));
 });
+router.get('/solar-irradiation', async (req, res) => {
+  const { latitude, longitude } = coordinates(req.query);
+  res.json(await getSolarIrradiation(latitude, longitude));
+});
+router.post('/solar-map/financial-estimate', async (req, res) => {
+  const input = z.object({
+    latitude: z.number().min(-35).max(-22),
+    longitude: z.number().min(16).max(33),
+    monthlyBill: z.number().positive().max(100000000),
+    monthlyConsumption: z.number().positive().max(1000000),
+    tariff: z.number().positive().max(10000),
+    systemKw: z.number().positive().max(1000),
+    installationCost: z.number().positive().max(100000000),
+    selfConsumption: z.number().min(0).max(1).default(0.75),
+    orientation: z.number().min(-180).max(180).default(180),
+    tilt: z.number().min(0).max(90).default(30)
+  }).parse(req.body);
+  const solar = await getSolarPotential(
+    input.latitude,
+    input.longitude,
+    input.systemKw,
+    input.orientation,
+    input.tilt
+  );
+  const annualGeneration = solar.data?.outputs?.totals?.fixed?.E_y;
+  if (!Number.isFinite(annualGeneration) || annualGeneration <= 0) {
+    const unavailable = new Error('PVGIS did not return usable annual generation for this location.');
+    unavailable.status = 503;
+    unavailable.code = 'UPSTREAM_INVALID_DATA';
+    throw unavailable;
+  }
+  const irradiation = annualGeneration / (input.systemKw * 365 * 0.78);
+  const result = assessSolar({
+    ...input,
+    irradiation,
+    performanceRatio: 0.78,
+    annualTariffIncrease: 0.08,
+    lifespanYears: 25
+  });
+  res.json({
+    result,
+    source: solar.source,
+    dataType: solar.dataType,
+    retrievedAt: solar.retrievedAt,
+    assumptions: {
+      irradiationMethod: 'PVGIS modeled annual PV generation converted for the existing SolarWise assessment model',
+      selfConsumption: input.selfConsumption,
+      annualTariffIncrease: 0.08,
+      lifespanYears: 25,
+      maintenanceRate: 0.01,
+      orientation: input.orientation,
+      tilt: input.tilt
+    }
+  });
+});
 router.get('/tariffs', async (_req, res) => {
   try {
     const tariffs = await getPrisma().electricityTariff.findMany({
-      where: { effectiveTo: null }, include: { municipality: { select: { name: true, province: { select: { name: true } } } } },
+      where: { effectiveTo: null, effectiveFrom: { lte: new Date() } },
+      include: { municipality: { select: { name: true, province: { select: { name: true } } } } },
       orderBy: [{ municipality: { name: 'asc' } }, { effectiveFrom: 'desc' }]
     });
     res.json({ tariffs, status: 'administrator-maintained; verify each source and effective date' });

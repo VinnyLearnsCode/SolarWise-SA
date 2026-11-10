@@ -1,0 +1,21 @@
+{
+  "country": "South Africa",
+  "countryCode": "ZAF",
+  "boundaryYearRepresented": "2020",
+  "boundaryBuildDate": "2023-12-12",
+  "sourceDataUpdateDate": "2023-01-19",
+  "boundarySource": "OCHA ROSEA and South African Municipal Demarcation Board",
+  "boundaryPublisher": "geoBoundaries",
+  "boundaryApi": "https://www.geoboundaries.org/api/current/gbOpen/ZAF/",
+  "boundaryLicense": "CC BY 3.0 IGO",
+  "boundarySourceUrl": "https://data.humdata.org/dataset/south-africa-admin-level-1-boundaries",
+  "provinceUnits": 9,
+  "municipalityUnits": 213,
+  "municipalityLevel": "Local municipality",
+  "solarSource": "European Commission Joint Research Centre PVGIS 5.3",
+  "solarApi": "https://re.jrc.ec.europa.eu/api/v5_3/MRcalc",
+  "solarRadiationDatabase": "PVGIS-SARAH3",
+  "solarDataClassification": "Modelled long-term global horizontal irradiation at a geometric representative point",
+  "tariffDataClassification": "Official municipal tariff records maintained by SolarWise administrators; unavailable when no active verified record exists",
+  "generatedBoundaryFilesFrom": "geoBoundaries simplified GeoJSON snapshots"
+}

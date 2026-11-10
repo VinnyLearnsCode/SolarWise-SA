@@ -11,7 +11,9 @@ Base path: `/api`. JSON request bodies are capped at 32 KB. Rate limiting is 120
 - `POST /calculations/usage` — appliance estimates: `appliances` array of name, watts, quantity, hoursPerDay, daysPerMonth; optional tariff.
 - `POST /calculations/battery` — outage estimate: `hours` plus appliances (watts, quantity, hours).
 - `GET /weather?latitude=-26.2&longitude=28.0` — Open-Meteo current conditions, recent observations and forecast.
-- `GET /solar-potential?latitude=-26.2&longitude=28.0&peakPower=5` — PVGIS modeled production estimate.
+- `GET /solar-potential?latitude=-26.2&longitude=28.0&peakPower=5&orientation=180&tilt=30` — PVGIS modeled production estimate. Orientation uses PVGIS azimuth conventions (`180` north-facing, `0` south-facing).
+- `GET /solar-irradiation?latitude=-26.2&longitude=28.0` — modeled long-term global horizontal irradiation from PVGIS.
+- `POST /solar-map/financial-estimate` — map savings/payback estimate. Requires numeric `latitude`, `longitude`, `monthlyBill`, `monthlyConsumption`, `tariff`, `systemKw`, and `installationCost`; accepts optional `selfConsumption` (decimal from 0 to 1), `orientation` and `tilt`.
 - `GET /tariffs` — currently effective database tariff records. No default live tariffs are supplied.
 - `POST /feedback` — validated product feedback; database required.
 

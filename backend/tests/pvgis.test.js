@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { getSolarPotential } = require('../src/integrations/pvgis');
+const { getSolarPotential, getSolarIrradiation } = require('../src/integrations/pvgis');
 
 test('PVGIS retries transient server failures and returns the modeled result', async () => {
   const originalFetch = global.fetch;
@@ -75,6 +75,53 @@ test('PVGIS uses the requested roof orientation and tilt in distinct cached mode
     assert.equal(north.tilt, 25);
     assert.equal(east.orientation, -90);
     assert.equal(east.tilt, 15);
+  } finally {
+    global.fetch = originalFetch;
+    if (previous.retries === undefined) delete process.env.PVGIS_RETRIES;
+    else process.env.PVGIS_RETRIES = previous.retries;
+    if (previous.delay === undefined) delete process.env.PVGIS_RETRY_DELAY_MS;
+    else process.env.PVGIS_RETRY_DELAY_MS = previous.delay;
+    if (previous.timeout === undefined) delete process.env.PVGIS_TIMEOUT_MS;
+    else process.env.PVGIS_TIMEOUT_MS = previous.timeout;
+  }
+});
+
+test('PVGIS returns mean annual global horizontal irradiation from its monthly radiation series', async () => {
+  const originalFetch = global.fetch;
+  const previous = {
+    retries: process.env.PVGIS_RETRIES,
+    delay: process.env.PVGIS_RETRY_DELAY_MS,
+    timeout: process.env.PVGIS_TIMEOUT_MS
+  };
+  let requestUrl;
+  process.env.PVGIS_RETRIES = '0';
+  process.env.PVGIS_RETRY_DELAY_MS = '0';
+  process.env.PVGIS_TIMEOUT_MS = '5000';
+  global.fetch = async (url) => {
+    requestUrl = new URL(url);
+    return new Response(JSON.stringify({
+      inputs: { meteo_data: { year_min: 2005, year_max: 2006, radiation_db: 'PVGIS-SARAH3' } },
+      outputs: {
+        monthly: [
+          { year: 2005, month: 1, 'H(h)_m': 100 },
+          { year: 2005, month: 2, 'H(h)_m': 200 },
+          { year: 2006, month: 1, 'H(h)_m': 150 },
+          { year: 2006, month: 2, 'H(h)_m': 250 }
+        ]
+      }
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+
+  try {
+    const result = await getSolarIrradiation(-24.1234, 17.2345);
+    assert.equal(requestUrl.pathname, '/api/v5_3/MRcalc');
+    assert.equal(requestUrl.searchParams.get('horirrad'), '1');
+    assert.equal(requestUrl.searchParams.get('lat'), '-24.1234');
+    assert.equal(result.annualKwhM2, 350);
+    assert.equal(result.dailyAverageKwhM2, 350 / 365);
+    assert.deepEqual(result.years, { from: 2005, to: 2006, count: 2 });
+    assert.equal(result.plane, 'horizontal');
+    assert.equal(result.source, 'European Commission Joint Research Centre PVGIS');
   } finally {
     global.fetch = originalFetch;
     if (previous.retries === undefined) delete process.env.PVGIS_RETRIES;

@@ -77,6 +77,8 @@ Open-Meteo, MET Norway, and PVGIS require outbound DNS/network access. Open-Mete
 
 The Solar Explorer defaults PVGIS to north-facing panels for South African locations (PVGIS azimuth `180°`; its `0°` azimuth is south-facing). Users can adjust direction and tilt, enter optional monthly electricity use for a generation-to-usage comparison, and compare three nearby system sizes. The usage comparison is not a bill-savings or self-sufficiency estimate; seasonal output and the timing of generation and use matter.
 
+The interactive map at `/html/solar-map.html` provides province and local-municipality boundaries, search, solar-resource and tariff layers, and optional assumption-based savings/payback estimates. Boundaries represent the 2020 dataset and are loaded province by province. PVGIS irradiation is sampled at a representative point, not presented as a regional average. Tariffs appear only when an active, sourced administrator record is available; municipal and provincial coverage may be incomplete. See the [map data notes](frontend/data/solar-map/README.md).
+
 No tariff schedule is bundled as current. Users enter their own tariff or use administrator-maintained tariff records with source and effective dates. See [calculation methodology](documentation/calculation-methodology.md) for assumptions.
 
 ## Documentation

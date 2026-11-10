@@ -12,7 +12,8 @@ const publicPages = [
   'index.html', 'about.html', 'affordability.html', 'battery.html',
   'calculator.html', 'compare.html', 'contact.html', 'education.html',
   'energy-usage.html', 'faq.html', 'financing.html', 'off-grid.html',
-  'planner.html', 'privacy.html', 'quotes.html', 'solar-explorer.html'
+  'planner.html', 'privacy.html', 'quotes.html', 'solar-explorer.html',
+  'solar-map.html'
 ];
 
 app.disable('x-powered-by');
@@ -22,7 +23,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", 'https://cdn.jsdelivr.net'],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
       connectSrc: ["'self'"],
       imgSrc: ["'self'", 'data:'],
       objectSrc: ["'none'"],

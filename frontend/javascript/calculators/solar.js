@@ -4,6 +4,7 @@ let latestAssessment = null;
 let locationContext = null;
 let availableTariffs = [];
 let shouldLoadLocation = false;
+let selectedMapLocation = null;
 
 if (solarForm) {
   ['monthlyBill', 'monthlyConsumption', 'tariff'].forEach((name) => {
@@ -26,6 +27,32 @@ if (solarForm) {
       document.getElementById('solar-location').value = option.value;
       shouldLoadLocation = true;
     }
+  }
+  const mapPlace = query.get('locationName');
+  const mapLatitude = Number(query.get('latitude'));
+  const mapLongitude = Number(query.get('longitude'));
+  if (mapPlace && Number.isFinite(mapLatitude) && Number.isFinite(mapLongitude)
+    && mapLatitude >= -35 && mapLatitude <= -22 && mapLongitude >= 16 && mapLongitude <= 33) {
+    const latitude = mapLatitude.toFixed(6);
+    const longitude = mapLongitude.toFixed(6);
+    const province = query.get('locationProvince') || '';
+    const orientation = Number(query.get('orientation'));
+    const tilt = Number(query.get('tilt'));
+    selectedMapLocation = {
+      place: mapPlace,
+      province,
+      latitude,
+      longitude,
+      orientation: Number.isFinite(orientation) && orientation >= -180 && orientation <= 180 ? orientation : 180,
+      tilt: Number.isFinite(tilt) && tilt >= 0 && tilt <= 90 ? tilt : 30
+    };
+    const locationSelect = document.getElementById('solar-location');
+    const option = document.createElement('option');
+    option.value = `${latitude},${longitude}|${mapPlace}`;
+    option.textContent = `${mapPlace}${province ? ` · ${province}` : ''} · selected map area`;
+    locationSelect.add(option);
+    locationSelect.value = option.value;
+    shouldLoadLocation = true;
   }
   loadTariffs();
   renderSavedScenarios();
@@ -71,12 +98,19 @@ document.getElementById('load-solar-location')?.addEventListener('click', async 
   const button = event.currentTarget;
   const status = document.getElementById('solar-location-status');
   const [coords, place] = document.getElementById('solar-location').value.split('|');
-  const [latitude, longitude] = coords.split(',');
+  const [selectedLatitude, selectedLongitude] = coords.split(',').map(Number);
+  const isSelectedMapLocation = selectedMapLocation?.place === place
+    && selectedMapLocation.latitude === selectedLatitude.toFixed(6)
+    && selectedMapLocation.longitude === selectedLongitude.toFixed(6);
+  const latitude = isSelectedMapLocation ? Number(selectedMapLocation.latitude) : selectedLatitude;
+  const longitude = isSelectedMapLocation ? Number(selectedMapLocation.longitude) : selectedLongitude;
+  const orientation = isSelectedMapLocation ? selectedMapLocation.orientation : 180;
+  const tilt = isSelectedMapLocation ? selectedMapLocation.tilt : 30;
   const systemKw = Number(solarForm.elements.systemKw.value);
   button.disabled = true;
-  status.textContent = `Loading PVGIS modeled production for ${place}…`;
+  status.textContent = `Loading PVGIS modeled production for ${place}${isSelectedMapLocation && selectedMapLocation.province ? `, ${selectedMapLocation.province}` : ''}…`;
   try {
-    const response = await SolarAPI.request(`/solar-potential?latitude=${latitude}&longitude=${longitude}&peakPower=${systemKw}`);
+    const response = await SolarAPI.request(`/solar-potential?latitude=${latitude}&longitude=${longitude}&peakPower=${systemKw}&orientation=${orientation}&tilt=${tilt}`);
     const annualKwh = Number(response.data?.outputs?.totals?.fixed?.E_y);
     if (!Number.isFinite(annualKwh) || annualKwh <= 0) {
       throw new Error('PVGIS did not return a usable annual production estimate for this location.');
@@ -88,6 +122,12 @@ document.getElementById('load-solar-location')?.addEventListener('click', async 
     solarForm.elements.irradiation.value = equivalentIrradiation.toFixed(2);
     locationContext = {
       place,
+      province: isSelectedMapLocation ? selectedMapLocation.province : '',
+      isMapSelection: isSelectedMapLocation,
+      latitude,
+      longitude,
+      orientation,
+      tilt,
       source: response.source,
       retrievedAt: response.retrievedAt,
       annualKwh: Math.round(annualKwh),
@@ -95,7 +135,7 @@ document.getElementById('load-solar-location')?.addEventListener('click', async 
       stale: response.stale === true,
       cached: response.cached === true
     };
-    status.textContent = `${place}: modeled ${SolarFormat.number(annualKwh)} kWh/year for ${SolarFormat.number(systemKw, 1)} kWp. Calculator input updated to ${equivalentIrradiation.toFixed(2)} kWh/m²/day equivalent. Source: ${response.source}; retrieved ${new Date(response.retrievedAt).toLocaleString('en-ZA')}${response.stale ? ' (stale cached data)' : response.cached ? ' (cached)' : ''}.`;
+    status.textContent = `${place}${isSelectedMapLocation && selectedMapLocation.province ? `, ${selectedMapLocation.province}` : ''}: modeled ${SolarFormat.number(annualKwh)} kWh/year for ${SolarFormat.number(systemKw, 1)} kWp, facing ${orientation === 180 ? 'north' : `${orientation}°`} at ${tilt}° tilt. Calculator input updated to ${equivalentIrradiation.toFixed(2)} kWh/m²/day equivalent. Source: ${response.source}; retrieved ${new Date(response.retrievedAt).toLocaleString('en-ZA')}${response.stale ? ' (stale cached data)' : response.cached ? ' (cached)' : ''}.`;
   } catch (error) {
     status.textContent = `Could not load a location estimate: ${error.message} Your existing solar-resource input was not changed.`;
   } finally {
@@ -398,7 +438,7 @@ function renderResult(result, container, payload) {
     ? 'Carbon impact is not calculated because no verified South African grid emissions factor is configured.'
     : `Annual emissions avoided: approximately ${SolarFormat.number(impact.estimatedAnnualEmissionsAvoidedKg)} kg CO₂e.`;
   const locationSummary = locationContext
-    ? ` Location model: ${locationContext.place}, ${locationContext.source}; ${SolarFormat.number(locationContext.annualKwh)} kWh/year at ${SolarFormat.number(locationContext.peakPowerKw, 1)} kWp, retrieved ${new Date(locationContext.retrievedAt).toLocaleString('en-ZA')}${locationContext.stale ? ' (stale cached data)' : locationContext.cached ? ' (cached)' : ''}.`
+    ? ` Location model: ${locationContext.place}${locationContext.province ? `, ${locationContext.province}` : ''}${locationContext.isMapSelection ? ' at the selected area’s representative point' : ''}, ${locationContext.source}; ${SolarFormat.number(locationContext.annualKwh)} kWh/year at ${SolarFormat.number(locationContext.peakPowerKw, 1)} kWp${locationContext.isMapSelection ? `, ${locationContext.orientation === 180 ? 'north-facing' : `${locationContext.orientation}° orientation`}, ${locationContext.tilt}° tilt` : ''}, retrieved ${new Date(locationContext.retrievedAt).toLocaleString('en-ZA')}${locationContext.stale ? ' (stale cached data)' : locationContext.cached ? ' (cached)' : ''}.`
     : '';
   container.innerHTML = `
     <div class="result-hero"><small>Assessment verdict</small><strong>${SolarFormat.escape(result.verdict)}</strong></div>
@@ -447,7 +487,7 @@ function renderPrintablePlan(result, payload, solarLocation, generatedAt) {
     'off-grid': 'Off-grid estimate'
   };
   const location = solarLocation
-    ? `<p><strong>Solar resource:</strong> PVGIS modeled data for ${SolarFormat.escape(solarLocation.place)} (${SolarFormat.number(solarLocation.annualKwh)} kWh/year at ${SolarFormat.number(solarLocation.peakPowerKw, 1)} kWp; retrieved ${new Date(solarLocation.retrievedAt).toLocaleDateString('en-ZA')}${solarLocation.stale ? ', stale cached data' : ''}).</p>`
+    ? `<p><strong>Solar resource:</strong> PVGIS modeled data for ${SolarFormat.escape(solarLocation.place)}${solarLocation.province ? `, ${SolarFormat.escape(solarLocation.province)}` : ''}${solarLocation.isMapSelection ? ' at the selected area’s representative point' : ''} (${SolarFormat.number(solarLocation.annualKwh)} kWh/year at ${SolarFormat.number(solarLocation.peakPowerKw, 1)} kWp${solarLocation.isMapSelection ? `, ${solarLocation.orientation === 180 ? 'north-facing' : `${solarLocation.orientation}° orientation`}, ${solarLocation.tilt}° tilt` : ''}; retrieved ${new Date(solarLocation.retrievedAt).toLocaleDateString('en-ZA')}${solarLocation.stale ? ', stale cached data' : ''}).</p>`
     : '<p><strong>Solar resource:</strong> User-entered estimate; no location-specific PVGIS model was attached.</p>';
   const horizons = [
     ['10-year net savings', financial.savings10Years],

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explore South African solar irradiation, verified municipal electricity tariffs, and assumption-based solar savings and payback on an interactive map.">
+  <title>South African solar intelligence map — SolarWise SA</title>
+  <link rel="canonical" href="https://solarwise-sa-vinny-preview.onrender.com/html/solar-map.html">
+  <link rel="stylesheet" href="../css/base/tokens.css">
+  <link rel="stylesheet" href="../css/themes/dark.css">
+  <link rel="stylesheet" href="../css/utilities/accessibility.css">
+  <link rel="stylesheet" href="../css/layouts/site.css">
+  <link rel="stylesheet" href="../css/components/ui.css">
+  <link rel="stylesheet" href="../css/pages/solar-map.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span>SolarWise <span>SA</span></a>
+    <button class="menu-toggle" aria-label="Open navigation" aria-expanded="false">☰</button>
+    <nav class="nav-links" aria-label="Main navigation">
+      <a href="planner.html">Guided planner</a>
+      <a href="calculator.html">Solar calculator</a>
+      <a href="solar-explorer.html">Solar explorer</a>
+      <a href="solar-map.html" aria-current="page">Solar map</a>
+      <a href="education.html">Learn</a>
+      <a href="faq.html">FAQs</a>
+    </nav>
+    <button class="theme-toggle" aria-label="Toggle colour theme">◐</button>
+  </header>
+  <main class="wrap page-wrap">
+    <div class="page-intro map-intro">
+      <span class="eyebrow">Explore South Africa by area</span>
+      <h1>Solar intelligence,<br><span>on the map.</span></h1>
+      <p>Explore modeled solar radiation and verified municipal tariffs. Savings and payback appear only when you provide the assumptions. Select a province to see its local municipalities.</p>
+    </div>
+    <div class="solar-map-layout">
+      <aside class="panel map-sidebar" aria-label="Map controls and selected area information">
+        <section class="map-control-section">
+          <label for="map-search">Find a province or municipality</label>
+          <input id="map-search" type="search" autocomplete="off" placeholder="Search South Africa…" aria-controls="map-search-results" aria-expanded="false">
+          <div id="map-search-results" class="map-search-results" role="listbox" aria-label="Location search results" hidden></div>
+          <p class="map-helper">Search covers 9 provinces and 213 municipalities. Town, suburb, and ward boundaries are not in the boundary dataset.</p>
+        </section>
+        <section class="map-control-section">
+          <label for="map-layer">Choose a data layer</label>
+          <select id="map-layer">
+            <option value="solar">Solar irradiation</option>
+            <option value="tariff">Electricity tariffs</option>
+            <option value="savings">Estimated annual savings</option>
+            <option value="payback">Estimated payback</option>
+          </select>
+          <p id="map-layer-description" class="map-helper">Long-term modeled solar radiation on a horizontal surface, sampled at each area's representative point.</p>
+          <label for="tariff-category" id="tariff-category-label" hidden>Tariff customer category</label>
+          <select id="tariff-category" hidden aria-label="Tariff customer category"></select>
+          <div id="map-legend" class="map-legend" aria-label="Map legend"></div>
+          <p id="layer-status" class="map-status" role="status">Loading provincial boundaries…</p>
+        </section>
+        <details class="map-assumptions" id="financial-assumptions">
+          <summary>Assumptions for savings and payback</summary>
+          <p>These are estimates based on the same SolarWise calculation model. Add your own bill, usage, energy rate, and installed cost; no default financial values are invented.</p>
+          <div class="map-assumption-grid">
+            <label for="map-monthly-usage">Monthly electricity use <span>kWh</span><input id="map-monthly-usage" type="number" min="1" max="1000000" step="any" inputmode="decimal" placeholder="From your bill"></label>
+            <label for="map-monthly-bill">Monthly electricity bill <span>R</span><input id="map-monthly-bill" type="number" min="1" max="100000000" step="any" inputmode="decimal" placeholder="From your bill"></label>
+            <label for="map-tariff">Energy tariff <span>R/kWh</span><input id="map-tariff" type="number" min="0.01" max="10000" step="any" inputmode="decimal" placeholder="From your bill"></label>
+            <label for="map-system-cost">Installed system cost <span>R · quote</span><input id="map-system-cost" type="number" min="1" max="100000000" step="any" inputmode="decimal" placeholder="Enter a quote"></label>
+            <label for="map-system-size">System size <span>kWp</span><select id="map-system-size"><option value="3">3 kWp</option><option value="5" selected>5 kWp</option><option value="8">8 kWp</option><option value="10">10 kWp</option><option value="15">15 kWp</option></select></label>
+            <label for="map-self-consumption">Solar used in your home <span>% · model assumption</span><input id="map-self-consumption" type="number" min="0" max="100" step="1" value="75" inputmode="numeric"></label>
+            <label for="map-orientation">Roof direction <span>PVGIS aspect</span><select id="map-orientation"><option value="180" selected>North</option><option value="-90">East</option><option value="90">West</option><option value="0">South</option></select></label>
+            <label for="map-tilt">Roof tilt <span>degrees</span><select id="map-tilt"><option value="15">15°</option><option value="20">20°</option><option value="25">25°</option><option value="30" selected>30°</option><option value="35">35°</option><option value="40">40°</option><option value="45">45°</option></select></label>
+          </div>
+          <p class="map-helper">The starting values match calculator assumptions and can be changed. PVGIS aspect uses north = 180° and south = 0°. Estimates also use the model's 1% annual maintenance and 8% annual tariff escalation. No export revenue is included.</p>
+        </details>
+        <section class="map-selection-section" aria-labelledby="selected-area-heading">
+          <div class="map-selection-heading"><span class="map-step">SELECTED AREA</span><button id="back-to-country" class="button secondary map-back-button" type="button" hidden>← South Africa</button></div>
+          <div id="selected-area" aria-live="polite">
+            <h2 id="selected-area-heading">Choose an area</h2>
+            <p>Select any province, then choose a local municipality to inspect available information.</p>
+          </div>
+          <a id="calculate-area" class="button primary full map-calculate" aria-disabled="true">Calculate for this area →</a>
+        </section>
+      </aside>
+      <section class="panel map-panel" aria-label="Interactive map of South Africa">
+        <div class="map-toolbar">
+          <div><span class="map-step">GEOGRAPHIC VIEW</span><h2 id="map-level-title">South Africa</h2></div>
+          <button id="map-zoom-to-selection" class="button secondary" type="button" disabled>Zoom to selection</button>
+        </div>
+        <div id="solar-intelligence-map" class="solar-intelligence-map" role="region" aria-label="Interactive map with selectable provincial and municipal boundaries"><p class="map-library-fallback">Loading the interactive map…</p></div>
+        <div class="map-help-row"><span>Scroll or use +/− to zoom · drag to pan · Tab to focus an area · Enter to select</span><button id="map-reset-view" type="button">Reset view</button></div>
+      </section>
+    </div>
+    <p class="map-attribution-note">Boundaries: <a href="https://www.geoboundaries.org/" target="_blank" rel="noopener noreferrer">geoBoundaries</a>, based on OCHA ROSEA and South African Municipal Demarcation Board data (2020; CC BY 3.0 IGO). Solar radiation: European Commission Joint Research Centre <a href="https://re.jrc.ec.europa.eu/pvg_tools/en/" target="_blank" rel="noopener noreferrer">PVGIS</a>. Tariffs are shown only when an active record with a source and verification date is available.</p>
+  </main>
+  <footer class="footer"><div class="wrap footer-row"><a class="brand" href="index.html"><span class="brand-mark">S</span>SolarWise <span>SA</span></a><p>Modelled potential and assumptions are not quotes or guarantees.</p></div></footer>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="../javascript/services/site.js"></script>
+  <script src="../javascript/pages/solar-map.js"></script>
+</body>
+</html>
